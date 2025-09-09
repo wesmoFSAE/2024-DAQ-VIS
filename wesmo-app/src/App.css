@@ -6,7 +6,10 @@ html {
   font-family: "Roboto Condensed";
   overflow-y: auto;
   overflow-x: hidden;
+  
 }
+
+
 
 a {
   color: inherit;

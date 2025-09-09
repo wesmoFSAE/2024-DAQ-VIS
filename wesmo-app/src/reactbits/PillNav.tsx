@@ -4,7 +4,7 @@ import "./PillNav.css";
 
 type NavItem = {
   label: string;
-  href: string;
+  href: string;         // can be "/route" or "#section"
   ariaLabel?: string;
 };
 
@@ -15,7 +15,7 @@ type Props = {
   logoAlt?: string;
 
   items: NavItem[];
-  activeHref?: string;
+  activeHref?: string;              // optional external control; else we track current hash/path
   className?: string;
   ease?: string;
   baseColor?: string;
@@ -44,6 +44,10 @@ const PillNav: React.FC<Props> = ({
   const resolvedPillTextColor = pillTextColor ?? baseColor;
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [localActiveHref, setLocalActiveHref] = useState<string>(() =>
+    typeof window !== "undefined" ? (window.location.hash || window.location.pathname) : "/"
+  );
+
   const circleRefs = useRef<HTMLSpanElement[]>([]);
   const tlRefs = useRef<gsap.core.Timeline[]>([]);
   const activeTweenRefs = useRef<gsap.core.Tween[]>([]);
@@ -53,6 +57,14 @@ const PillNav: React.FC<Props> = ({
   const mobileMenuRef = useRef<HTMLDivElement | null>(null);
   const navItemsRef = useRef<HTMLDivElement | null>(null);
   const logoRef = useRef<HTMLAnchorElement | null>(null);
+
+  // Keep active pill in sync with the URL hash / path unless externally controlled
+  useEffect(() => {
+    if (activeHref) return; // external control wins
+    const onHashChange = () => setLocalActiveHref(window.location.hash || window.location.pathname);
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [activeHref]);
 
   useEffect(() => {
     const layout = () => {
@@ -92,9 +104,7 @@ const PillNav: React.FC<Props> = ({
         const tl = gsap.timeline({ paused: true });
 
         tl.to(circle, { scale: 1.2, xPercent: -50, duration: 2, ease, overwrite: "auto" }, 0);
-
         if (label) tl.to(label, { y: -(h + 8), duration: 2, ease, overwrite: "auto" }, 0);
-
         if (white) {
           gsap.set(white, { y: Math.ceil(h + 100), opacity: 0 });
           tl.to(white, { y: 0, opacity: 1, duration: 2, ease, overwrite: "auto" }, 0);
@@ -125,7 +135,6 @@ const PillNav: React.FC<Props> = ({
         gsap.set(logoEl, { scale: 0 });
         gsap.to(logoEl, { scale: 1, duration: 0.6, ease });
       }
-
       if (navItems) {
         gsap.set(navItems, { width: 0, overflow: "hidden" });
         gsap.to(navItems, { width: "auto", duration: 0.6, ease });
@@ -176,29 +185,52 @@ const PillNav: React.FC<Props> = ({
     }
 
     if (menu) {
-        if (newState) {
-            gsap.set(menu, { visibility: "visible" });
-            gsap.fromTo(
-            menu,
-            { opacity: 0, y: 10, scaleY: 1 },
-            { opacity: 1, y: 0, scaleY: 1, duration: 0.3, ease, transformOrigin: "top center" }
-            );
-        } else {
-            gsap.to(menu, {
-            opacity: 0,
-            y: 10,
-            scaleY: 1,
-            duration: 0.2,
-            ease,
-            transformOrigin: "top center",
-            onComplete: () => { gsap.set(menu, { visibility: "hidden" }); }, // <-- return void
-            // or: onComplete: () => void gsap.set(menu, { visibility: "hidden" }),
-            });
-        }
-        }
+      if (newState) {
+        gsap.set(menu, { visibility: "visible" });
+        gsap.fromTo(
+          menu,
+          { opacity: 0, y: 10, scaleY: 1 },
+          { opacity: 1, y: 0, scaleY: 1, duration: 0.3, ease, transformOrigin: "top center" }
+        );
+      } else {
+        gsap.to(menu, {
+          opacity: 0,
+          y: 10,
+          scaleY: 1,
+          duration: 0.2,
+          ease,
+          transformOrigin: "top center",
+          onComplete: () => { gsap.set(menu, { visibility: "hidden" }); },
+        });
+      }
+    }
 
     onMobileMenuClick?.();
   };
+
+// Smooth scroll helper for "#hash" links
+const scrollToHash = (hash: string) => {
+  const id = hash.replace(/^#/, "");
+  const el = document.getElementById(id);
+  if (!el) return;
+
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  // Update the URL hash without triggering the ESLint no-restricted-globals rule
+  if (typeof window !== "undefined") {
+    const newHash = `#${id}`;
+    if (window.location.hash !== newHash) {
+      if (window.history?.replaceState) {
+        window.history.replaceState(null, "", newHash);
+      } else {
+        // fallback
+        window.location.hash = newHash;
+      }
+    }
+  }
+
+  if (!activeHref) setLocalActiveHref(`#${id}`);
+};
 
   const cssVars = {
     ["--base" as any]: baseColor,
@@ -207,7 +239,7 @@ const PillNav: React.FC<Props> = ({
     ["--pill-text" as any]: resolvedPillTextColor,
   };
 
-  const currentHref = activeHref ?? (typeof window !== "undefined" ? window.location.pathname : "/");
+  const currentHref = activeHref ?? localActiveHref;
 
   return (
     <div className="pill-nav-container">
@@ -218,6 +250,13 @@ const PillNav: React.FC<Props> = ({
           aria-label="Home"
           onMouseEnter={handleLogoEnter}
           ref={logoRef as any}
+          onClick={(e) => {
+            const h = items?.[0]?.href;
+            if (h?.startsWith("#")) {
+              e.preventDefault();
+              scrollToHash(h);
+            }
+          }}
         >
           {logoNode ? (
             <span style={{ display: "grid", placeItems: "center", width: "100%", height: "100%" }}>{logoNode}</span>
@@ -228,32 +267,46 @@ const PillNav: React.FC<Props> = ({
 
         <div className="pill-nav-items desktop-only" ref={navItemsRef}>
           <ul className="pill-list" role="menubar">
-            {items.map((item, i) => (
-              <li key={`${item.href}-${i}`} role="none">
-                <a
-                  role="menuitem"
-                  href={item.href}
-                  className={`pill${currentHref === item.href ? " is-active" : ""}`}
-                  aria-label={item.ariaLabel || item.label}
-                  onMouseEnter={() => handleEnter(i)}
-                  onMouseLeave={() => handleLeave(i)}
-                >
-                  <span
-                    className="hover-circle"
-                    aria-hidden="true"
-                    ref={(el) => {
-                      if (el) circleRefs.current[i] = el;
+            {items.map((item, i) => {
+              const isActive =
+                // If the item is a hash link, compare to location.hash, else compare to pathname
+                item.href.startsWith("#")
+                  ? currentHref === item.href
+                  : (currentHref || "").startsWith(item.href || "/");
+
+              return (
+                <li key={`${item.href}-${i}`} role="none">
+                  <a
+                    role="menuitem"
+                    href={item.href}
+                    className={`pill${isActive ? " is-active" : ""}`}
+                    aria-label={item.ariaLabel || item.label}
+                    onMouseEnter={() => handleEnter(i)}
+                    onMouseLeave={() => handleLeave(i)}
+                    onClick={(e) => {
+                      if (item.href.startsWith("#")) {
+                        e.preventDefault();
+                        scrollToHash(item.href);
+                      }
                     }}
-                  />
-                  <span className="label-stack">
-                    <span className="pill-label">{item.label}</span>
-                    <span className="pill-label-hover" aria-hidden="true">
-                      {item.label}
+                  >
+                    <span
+                      className="hover-circle"
+                      aria-hidden="true"
+                      ref={(el) => {
+                        if (el) circleRefs.current[i] = el;
+                      }}
+                    />
+                    <span className="label-stack">
+                      <span className="pill-label">{item.label}</span>
+                      <span className="pill-label-hover" aria-hidden="true">
+                        {item.label}
+                      </span>
                     </span>
-                  </span>
-                </a>
-              </li>
-            ))}
+                  </a>
+                </li>
+              );
+            })}
           </ul>
         </div>
 
@@ -270,17 +323,30 @@ const PillNav: React.FC<Props> = ({
 
       <div className="mobile-menu-popover mobile-only" ref={mobileMenuRef} style={cssVars}>
         <ul className="mobile-menu-list">
-          {items.map((item, i) => (
-            <li key={`m-${item.href}-${i}`}>
-              <a
-                href={item.href}
-                className={`mobile-menu-link${currentHref === item.href ? " is-active" : ""}`}
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                {item.label}
-              </a>
-            </li>
-          ))}
+          {items.map((item, i) => {
+            const isActive =
+              item.href.startsWith("#")
+                ? currentHref === item.href
+                : (currentHref || "").startsWith(item.href || "/");
+
+            return (
+              <li key={`m-${item.href}-${i}`}>
+                <a
+                  href={item.href}
+                  className={`mobile-menu-link${isActive ? " is-active" : ""}`}
+                  onClick={(e) => {
+                    if (item.href.startsWith("#")) {
+                      e.preventDefault();
+                      scrollToHash(item.href);
+                    }
+                    setIsMobileMenuOpen(false);
+                  }}
+                >
+                  {item.label}
+                </a>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </div>

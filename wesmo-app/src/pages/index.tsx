@@ -179,16 +179,16 @@ const Home: React.FC = () => {
       <div className="background" style={{ position: "absolute", inset: 0, zIndex: -2 }} aria-hidden />
       <div style={{ position: "absolute", inset: 0, zIndex: -1 }} aria-hidden />
 
-      <header className="absolute inset-x-0 top-0 z-40">
-      <div className="mx-auto max-w-7xl px-6 py-5">
+      {/* <header className="absolute inset-x-0 top-0 z-40"> 
+      <div className="mx-auto max-w-7xl px-6 py-5"> */}
 
       {/* Centered Pill Nav (positioning handled in PillNav.css) */}
-      <PillNav
+      {/* <PillNav
         logoSrc={wesmoHeaderLogo}
         items={[
           { label: "Home", href: "/" },
-          { label: "Our Team", href: "/engineering" },
-          { label: "Contact us", href: "/contact" },
+          { label: "Our Team", href: "/engineering-team" },
+          { label: "Contact us", href: "/contact-us" },
           { label: "About us", href: "/about-wesmo" },
           { label: "About FSAE", href: "/about-fsae" },
           { label: "Sponsors", href: "/sponsors" },
@@ -202,7 +202,7 @@ const Home: React.FC = () => {
         pillTextColor="#0a0a0a"
       />
       </div>
-    </header>
+    </header>  */}
 
 
       {/* Hero */}
@@ -224,7 +224,7 @@ const Home: React.FC = () => {
               letterSpacing: 1.2,
             }}
           >
-            2024
+            2025
           </div>
 
           {/* Headline */}

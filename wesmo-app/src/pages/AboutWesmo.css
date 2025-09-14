@@ -1,0 +1,311 @@
+:root {
+  --brand: #e12020;           /* adjust to team red */
+  --bg: #0a0a0a;
+  --card: rgba(255,255,255,0.06);
+  --stroke: rgba(255,255,255,0.12);
+  --soft: rgba(255,255,255,0.08);
+  --text: #ffffff;
+  --muted: #c9c9c9;
+}
+
+/* page shell */
+.about {
+  color: var(--text);
+  background: var(--bg);
+}
+
+/* basic layout helpers */
+.container {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 56px 24px;
+}
+
+.section-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  margin-bottom: 16px;
+}
+
+/* HERO */
+.about-hero {
+  min-height: 64vh;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.6), rgba(0,0,0,.6)),
+    var(--about-hero, radial-gradient(1200px 600px at 70% 40%, #1a1a1a 0%, #0b0b0b 60%, #060606 100%));
+  background-size: cover;
+  background-position: center;
+}
+
+.about-hero__glass {
+  width: min(900px, 92vw);
+  backdrop-filter: blur(8px);
+  background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04));
+  border: 1px solid var(--stroke);
+  border-radius: 16px;
+  padding: 28px 28px 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.35);
+}
+
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  opacity: .85;
+  margin: 0 0 6px;
+}
+
+.about-hero h1 {
+  margin: 0 0 10px;
+  font-size: clamp(32px, 5vw, 48px);
+  line-height: 1.05;
+}
+
+.lead {
+  color: var(--muted);
+  margin: 0 0 18px;
+  font-size: 16px;
+}
+
+
+/* buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid var(--stroke);
+  transition: transform .15s ease, background .2s ease, border-color .2s ease;
+}
+
+.btn:hover { transform: translateY(-1px); }
+
+.btn--light {
+  background: #e10a0a;
+  color: #111;
+  border-color: transparent;
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--text);
+}
+
+.btn--brand {
+  background: var(--brand);
+  color: #fff;
+  border-color: transparent;
+}
+
+/* STATS */
+.about-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .about-stats { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+
+.stat {
+  background: var(--card);
+  border: 1px solid var(--stroke);
+  border-radius: 14px;
+  padding: 18px;
+  text-align: center;
+}
+
+.stat__num {
+  font-weight: 900;
+  font-size: 28px;
+  letter-spacing: .02em;
+}
+
+.stat__label {
+  opacity: .8;
+  font-size: 13px;
+}
+
+/* FEATURES */
+
+
+@media (max-width: 980px) {
+  .feature { grid-template-columns: 1fr; }
+  .feature--alt .feature__media { order: -1; }
+}
+
+/* The media wrapper defines the box size */
+.feature__media {
+  position: relative;
+  width: 100%;
+  /* Choose ONE of these to control height/ratio */
+  height: 220px;                 /* fixed height */
+  /* aspect-ratio: 16 / 9; */    /* or a responsive ratio */
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* Make the image fill the box */
+.feature__img {
+  position: absolute;
+  inset: 0;          /* top:0 right:0 bottom:0 left:0 */
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* fills and crops */
+  object-position: center;
+}
+
+/* Gradient on top of the image */
+.feature__overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.03)
+  );
+}
+
+
+
+
+.feature__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;  /* fills box & crops if needed */
+  object-position: center;
+}
+
+
+.feature__copy p { color: var(--muted); }
+
+
+.feature {
+  display: grid;          /* or flex, either works */
+  grid-template-columns: minmax(320px, 520px) 1fr; /* example */
+  gap: 28px;
+}
+
+/* The media box */
+.feature__media {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  width: 100%;
+  /* IMPORTANT in grid/flex: allow child to shrink instead of overflowing */
+  min-width: 0;
+  background: none !important;  /* kill any old gradient bg */
+  /* pick ONE of the two height approaches below */
+  aspect-ratio: 16 / 9;         /* modern: keeps a nice ratio */
+  /* height: 240px;              fallback if you don't want aspect-ratio */
+}
+.feature__media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.04));
+  pointer-events: none;
+}
+/* Make the image fill the whole box */
+.feature__media > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;             /* fill + crop if needed */
+  object-position: center;
+}
+
+/* (optional) the text panel next to it */
+.feature__panel {
+  min-width: 0;                 /* prevent text side from forcing the row wider */
+}
+/* -------------------------------------------------------------------------------- */
+.bullets {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  line-height: 1.6;
+}
+.bullets li { color: var(--text); }
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  list-style: none;          /* <- removes the dot */
+  padding: 0;                /* <- removes left indent */
+  margin: 16px 0 0;
+}
+.chips li {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 999px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid var(--stroke);
+}
+
+
+/* Media placeholders – swap to images if you want */
+.feature__media,
+.feature__media--two {
+  border-radius: 14px;
+  border: 1px solid var(--stroke);
+  min-height: 220px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)),
+    radial-gradient(500px 250px at 65% 30%, rgba(225,32,32,.2), transparent 60%),
+    #0e0e0e;
+}
+.feature__media--two {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)),
+    radial-gradient(500px 250px at 35% 70%, rgba(225,32,32,.2), transparent 60%),
+    #0e0e0e;
+}
+
+/* TIMELINE */
+.timeline__list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+}
+.timeline__list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;                 /* <- space between dot and text */
+  margin: 12px 0;
+}
+.timeline__list .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--brand);
+  flex: 0 0 auto;
+  margin-top: 4px;           /* aligns dot with first line of text */
+}
+
+/* CTA STRIP */
+.cta-strip {
+  text-align: center;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+  border: 1px solid var(--stroke);
+  border-radius: 16px;
+}
+.cta-strip h3 { margin: 0 0 6px; font-size: 22px; }
+.cta-strip p  { margin: 0 0 12px; color: var(--muted); }
+

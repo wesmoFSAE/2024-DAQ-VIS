@@ -4,9 +4,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import GlareHover from "../reactbits/GlareHover.tsx";
 import TypeWriter from "../components/TypeWriter.tsx";
 
-import Logo from "../components/Logo.tsx";// at the top with your other imports
-import wesmoHeaderLogo from "../images/wesmo-logo/logo_header.png";
-import PillNav from "../reactbits/PillNav.tsx";
+
 
 import "../App.css";
 

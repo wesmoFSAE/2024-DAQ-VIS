@@ -1,17 +1,5 @@
-/*
- * File: pages/fsae.tsx
- * Author: Hannah Murphy
- * Date: 2024
- * Description: Webpage describing what FSAE is and the compeition WESMO attends in Australia.
- *
- * Copyright (c) 2024 WESMO. All rights reserved.
- * This code is part of the  WESMO Data Acquisition and Visualisation Project.
- *
- */
-
-import React from "react";
+import React, { useEffect } from "react";
 import { Link } from "react-router-dom";
-
 
 import Logo from "../components/Logo.tsx";
 import TitleCard from "../components/TitleCard.tsx";
@@ -23,25 +11,47 @@ import rules from "../files/FSAE_Rules_2024_V1.pdf";
 import "../App.css";
 
 const Fsae: React.FC = () => {
+  // Simple reveal-on-view for elements with .reveal
+  useEffect(() => {
+    const nodes = document.querySelectorAll<HTMLElement>(".reveal");
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            e.target.classList.add("show");
+            io.unobserve(e.target);
+          }
+        });
+      },
+      { threshold: 0.2 }
+    );
+    nodes.forEach((n) => io.observe(n));
+    return () => io.disconnect();
+  }, []);
+
   return (
     <div className="App">
+      {/* (Small fix: proper Google Fonts URL) */}
       <link
-        href="https://fonts.googleapis.com/css?family=Roboto Condensed"
+        href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700&display=swap"
         rel="stylesheet"
-      ></link>
+      />
+
       <div className="background fsae" id="scroll">
         <div className="navbar">
           <div className="nav-left">
             <Logo />
           </div>
           <div className="nav-right">
-         
             <div className="nav-right"></div>
           </div>
         </div>
+
         <TitleCard title="Formula Society of Automotive Engineers" />
+
+        {/* RIGHT PANEL — slides in from the right */}
         <div className="right-display">
-          <div className="image-text-component right fsae">
+          <div className="image-text-component right fsae reveal from-right">
             <div className="text-container fsae-right">
               <p>
                 Formula Society of Automotive Engineers, more commonly known as
@@ -50,7 +60,7 @@ const Fsae: React.FC = () => {
                 from Australia, New Zealand, Japan, India, and Europe,
                 representing a fraction of the over 600 teams worldwide. The
                 competition puts the student-built race cars through varying
-                events which are categorised as either “static” or “dynamic”.{" "}
+                events which are categorised as either “static” or “dynamic”.
                 <br />
                 <br />
                 The static events consist of design, cost, and a business pitch
@@ -64,14 +74,20 @@ const Fsae: React.FC = () => {
               </p>
             </div>
             <div className="image-container fsae">
-              <img src={close_up} alt="" className="image fsae right" />
+              <img
+                src={close_up}
+                alt="WESMO FSAE car close-up"
+                className="image fsae right"
+              />
             </div>
           </div>
         </div>
+
+        {/* LEFT PANEL — slides in from the left */}
         <div className="left-display">
-          <div className="image-text-component left fsae">
+          <div className="image-text-component left fsae reveal from-left">
             <div className="image-container fsae-left">
-              <img src={fsae} alt="" className="image fsae logo" />
+              <img src={fsae} alt="SAE International logo" className="image fsae logo" />
             </div>
             <div className="text-container fsae-left">
               <p>
@@ -79,25 +95,55 @@ const Fsae: React.FC = () => {
                 Calder Park Raceway, in Calder Park, Victoria, Australia.
                 <br />
                 <br />
-                To find out more about SAEA: <br />
-                <Link to="https://www.saea.com.au/" className="link fsae">
-                  {" "}
-                  https://www.saea.com.au/
-                </Link>
-              </p>
-              <div className="pdf">
-                <Link
-                  to={rules}
+                To find out more about SAEA:
+                <br />
+                <a
+                  href="https://www.saea.com.au/"
                   target="_blank"
                   rel="noreferrer"
-                  className="link"
+                  className="link fsae"
                 >
+                  https://www.saea.com.au/
+                </a>
+              </p>
+              <div className="pdf">
+                <a href={rules} target="_blank" rel="noreferrer" className="link">
                   FSAE Rules 2024
-                </Link>
+                </a>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Minimal, scoped CSS for the slide-in motion */}
+        <style>{`
+          :root {
+            --slide-dist: 8vw;     /* how far panels travel in */
+            --slide-dur: 700ms;    /* animation duration */
+          }
+
+          .reveal {
+            opacity: 0;
+            transform: translateX(0);
+            will-change: transform, opacity;
+            transition:
+              transform var(--slide-dur) cubic-bezier(.22,.61,.36,1),
+              opacity   var(--slide-dur) ease;
+          }
+          .reveal.from-left  { transform: translateX(calc(var(--slide-dist) * -1)); }
+          .reveal.from-right { transform: translateX(var(--slide-dist)); }
+          .reveal.show { opacity: 1; transform: translateX(0); }
+
+          /* if the reveal wrapper contains children with their own transitions, keep it simple */
+          .reveal.show > * { transition: none; }
+
+          /* accessibility: respect reduced motion */
+          @media (prefers-reduced-motion: reduce) {
+            .reveal, .reveal.from-left, .reveal.from-right {
+              opacity: 1 !important; transform: none !important; transition: none !important;
+            }
+          }
+        `}</style>
       </div>
     </div>
   );

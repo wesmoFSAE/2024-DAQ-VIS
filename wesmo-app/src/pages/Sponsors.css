@@ -1,0 +1,71 @@
+.sponsors-page {
+  color: #fff;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(255,255,255,.06), transparent 55%);
+}
+
+.container { width: min(1160px, 92%); margin-inline: auto; }
+
+.tier { padding: 24px 0 10px; }
+.tier__head { margin: 4px 0 10px; }
+.tier__title {
+  margin: 0 0 4px;
+  font-weight: 800;
+  letter-spacing: .2px;
+  font-size: clamp(20px, 2.6vw, 28px);
+}
+.tier__title.platinum { color: #ffffff; }
+.tier__title.gold     { color: #ffd500; }
+.tier__title.silver   { color: #cfd3d8; }
+.tier__title.bronze   { color: #c9965b; }
+.tier__sub { margin: 0; opacity: .85; }
+
+.loop { margin-top: 10px; }
+
+.sponsor-cta {
+  display: flex; gap: 12px; justify-content: center;
+  padding: 26px 0 34px;
+}
+
+/* Buttons (match your other pages) */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 16px; border-radius: 999px; font-weight: 700;
+  text-decoration: none; border: 1px solid transparent;
+  transition: filter .18s ease, background-color .18s ease, transform .02s;
+}
+.btn:active { transform: translateY(1px); }
+.btn-danger { background: #e11d2e; color: #fff; }
+.btn-danger:hover { filter: brightness(.95); }
+.btn-ghost { color: #fff; border: 1px solid rgba(255,255,255,.25); background: transparent; }
+.btn-ghost:hover { background: rgba(255,255,255,.08); }
+
+/* Full-width (edge-to-edge) tier banners only on the sponsors page */
+.background.sponsors .title {
+  position: relative;
+  left: 50%;
+  width: 100vw;          /* span the whole viewport width */
+  margin-left: -50vw;    /* pull it out of the centered container */
+  margin-right: -50vw;
+  padding: 10px 0;       /* banner height */
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-radius: 0;      /* make it a full bar, not a pill */
+  box-shadow: 0 1px 0 rgba(255,255,255,.12),
+              inset 0 0 0 1px rgba(255,255,255,.06);
+  z-index: 0;
+}
+
+/* Keep a nice rhythm between bars and loops */
+.sponsors.container .loop-wrap {
+  max-width: 1200px;     /* keep logos centered and aligned */
+  margin: 8px auto 28px;
+  padding: 0 16px;
+}
+
+/* Optional: tier-specific colors that read well full-width */
+.background.sponsors .title.platinum { background: rgba(255,255,255,0.82); color:#0b0b0b; }
+.background.sponsors .title.gold     { background: #ffd100;               color:#0b0b0b; }
+.background.sponsors .title.silver   { background: rgba(255,255,255,0.65); color:#0b0b0b; }
+.background.sponsors .title.bronze   { background: #b8824a;               color:#0b0b0b; }

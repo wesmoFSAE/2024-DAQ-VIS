@@ -9,6 +9,12 @@ import EvImg from "../images/car_in_motion.jpg";
 const AboutWesmo: React.FC = () => {
   return (
     <div className="about">
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+      <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Roboto+Condensed:wght@400;700&display=swap"
+        rel="stylesheet"
+      />
       {/* HERO */}
       <section
         className="about-hero"
@@ -82,7 +88,7 @@ const AboutWesmo: React.FC = () => {
           </p>
           <ul className="chips">
             <li>Accumulator</li>
-            <li>Motor Controller</li>
+            <li>Motor Controller</li>--
             <li>BMS / Safety</li>
             <li>DAQ & Visualisation</li>
           </ul>

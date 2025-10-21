@@ -148,7 +148,7 @@
   position: relative;
   width: 100%;
   /* Choose ONE of these to control height/ratio */
-  height: 220px;                 /* fixed height */
+
   /* aspect-ratio: 16 / 9; */    /* or a responsive ratio */
   border-radius: 14px;
   overflow: hidden;
@@ -209,7 +209,7 @@
   background: none !important;  /* kill any old gradient bg */
   /* pick ONE of the two height approaches below */
   aspect-ratio: 16 / 9;         /* modern: keeps a nice ratio */
-  /* height: 240px;              fallback if you don't want aspect-ratio */
+ 
 }
 .feature__media::after {
   content: "";
@@ -259,23 +259,7 @@
 }
 
 
-/* Media placeholders – swap to images if you want */
-.feature__media,
-.feature__media--two {
-  border-radius: 14px;
-  border: 1px solid var(--stroke);
-  min-height: 220px;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)),
-    radial-gradient(500px 250px at 65% 30%, rgba(225,32,32,.2), transparent 60%),
-    #0e0e0e;
-}
-.feature__media--two {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)),
-    radial-gradient(500px 250px at 35% 70%, rgba(225,32,32,.2), transparent 60%),
-    #0e0e0e;
-}
+
 
 /* TIMELINE */
 .timeline__list {

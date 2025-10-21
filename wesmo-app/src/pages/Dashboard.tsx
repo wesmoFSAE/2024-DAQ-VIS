@@ -1,6 +1,349 @@
-import React from "react";
-import EVTelemetryDashboard from "../components/EVTelemeteryDashboard.tsx";
+import React, { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
+import { getSocket } from "../lib/socket.ts";
 
-export default function Dashboard() {
-    return <EVTelemetryDashboard />;
-}   
+/* ================= Types ================= */
+type Point = { t: number; v: number };
+type Series = Point[];
+type Store = Record<string, Series>;
+
+type TelemetryRow = {
+  time?: number | string;
+  ts?: number;
+  name: string;
+  value: number;
+  unit?: string;
+};
+
+/* ================= Config ================= */
+const MAX_POINTS = 120;
+const POLL_MS = 1000;
+
+const WATCH = [
+  { key: "Motor Temperature", label: "Motor Temp" },
+  { key: "Motor Speed", label: "Motor Speed" },
+  { key: "Battery State of Charge", label: "SoC" },
+  { key: "DC Link Circuit Voltage", label: "DC Voltage" },
+];
+
+// ---- WIP switch ----
+const WIP_MODE = true;
+
+// If your top nav is fixed and overlaps, nudge the cover down:
+const NAV_OFFSET_PX = 72; // try 64/72/80 if your navbar is fixed and covers content
+
+/* =============== Full-page WIP cover =============== */
+function FullPageWIP() {
+  // lock scroll while the overlay is shown
+  useLayoutEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        top: NAV_OFFSET_PX,
+        zIndex: 9999,
+        display: "grid",
+        placeItems: "center",
+        minHeight: `calc(100vh - ${NAV_OFFSET_PX}px)`,
+        width: "100vw",
+        // background layers
+        background:
+          "radial-gradient(1200px 600px at 10% -20%, rgba(94,200,255,.22), transparent 50%), " +
+          "radial-gradient(900px 500px at 120% 120%, rgba(255,120,120,.16), transparent 40%), " +
+          "linear-gradient(120deg, rgba(255,255,255,.04), rgba(255,255,255,0))",
+      }}
+    >
+      {/* subtle grid */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          backgroundSize: "22px 22px",
+          backgroundImage:
+            "linear-gradient(to right, rgba(255,255,255,.06) 1px, transparent 1px), " +
+            "linear-gradient(to bottom, rgba(255,255,255,.06) 1px, transparent 1px)",
+          pointerEvents: "none",
+        }}
+      />
+      {/* card */}
+      <div
+        style={{
+          position: "relative",
+          textAlign: "center",
+          padding: "48px 24px",
+          maxWidth: 860,
+          width: "min(92vw, 860px)",
+          borderRadius: 18,
+          border: "1px solid rgba(255,255,255,.18)",
+          background: "rgba(0,0,0,.34)",
+          backdropFilter: "blur(8px)",
+          boxShadow: "0 20px 60px rgba(0,0,0,.35)",
+        }}
+      >
+        <div
+          style={{
+            display: "inline-flex",
+            gap: 8,
+            alignItems: "center",
+            padding: "6px 10px",
+            borderRadius: 999,
+            fontSize: 12,
+            letterSpacing: 0.4,
+            textTransform: "uppercase",
+            border: "1px solid rgba(255,255,255,.22)",
+            background: "rgba(0,0,0,.35)",
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#f5b301" }} />
+          Private build • Work in progress
+        </div>
+
+        <h1 style={{ margin: "16px 0 8px", fontSize: 40, lineHeight: 1.1, fontWeight: 900 }}>
+          WESMO Live Dashboard
+        </h1>
+        <p style={{ margin: "0 0 22px", opacity: 0.88, fontSize: 16 }}>
+          We’re wiring the car and tuning the telemetry. This page will stream real-time data
+          once systems are cleared for public release.
+        </p>
+
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+          <a
+            href="/history"
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              fontWeight: 700,
+              textDecoration: "none",
+              background: "linear-gradient(90deg, #5ec8ff, #9ef1ff)",
+              color: "#000",
+            }}
+          >
+            See History
+          </a>
+          
+        </div>
+
+        <div
+          style={{
+            marginTop: 28,
+            height: 6,
+            borderRadius: 999,
+            background: "rgba(255,255,255,.12)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: "40%",
+              height: "100%",
+              background: "linear-gradient(90deg, #5ec8ff, #9ef1ff)",
+              animation: "wipbar 2.4s ease-in-out infinite",
+            }}
+          />
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes wipbar {
+          0% { transform: translateX(-60%); }
+          50% { transform: translateX(10%); }
+          100% { transform: translateX(120%); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/* =============== Data hook (unchanged) =============== */
+function useLiveStore() {
+  const [store, setStore] = useState<Store>({});
+  const [connected, setConnected] = useState(false);
+  const sockRef = useRef<ReturnType<typeof getSocket> | null>(null);
+
+  useEffect(() => {
+    const socket = getSocket();
+    sockRef.current = socket;
+
+    const upsert = (rows: TelemetryRow[]) => {
+      setStore((prev) => {
+        const next = { ...prev };
+        for (const r of rows) {
+          if (!r || typeof r.name !== "string" || typeof r.value !== "number") continue;
+          const t =
+            typeof r.ts === "number"
+              ? r.ts
+              : typeof r.time === "number"
+              ? r.time
+              : Date.now();
+          const s = (next[r.name] || []).slice(-MAX_POINTS + 1);
+          s.push({ t, v: r.value });
+          next[r.name] = s;
+        }
+        return next;
+      });
+    };
+
+    socket.on("connect", () => setConnected(true));
+    socket.on("disconnect", () => setConnected(false));
+
+    socket.on("data", (payload: any) => {
+      if (Array.isArray(payload)) {
+        upsert(payload as TelemetryRow[]);
+      } else if (payload && typeof payload === "object") {
+        const flat: TelemetryRow[] = [];
+        for (const [name, row] of Object.entries<any>(payload)) {
+          if (Array.isArray(row)) flat.push(...(row as TelemetryRow[]));
+          else if (row && typeof row === "object") flat.push({ name, ...(row as any) });
+        }
+        upsert(flat);
+      }
+    });
+
+    socket.on("recieve_historic_data", (rows: TelemetryRow[]) => upsert(rows));
+    socket.on("timerRecieve", (_timer: any) => {});
+    const iv = setInterval(() => socket.emit("update_clients"), POLL_MS);
+
+    return () => {
+      clearInterval(iv);
+      socket.off("connect");
+      socket.off("disconnect");
+      socket.off("data");
+      socket.off("recieve_historic_data");
+      socket.off("timerRecieve");
+    };
+  }, []);
+
+  return { store, connected };
+}
+
+/* =============== Small UI bits (unchanged) =============== */
+function Sparkline({ series, h = 36, w = 120 }: { series: Series; h?: number; w?: number }) {
+  const d = useMemo(() => {
+    if (!series || series.length < 2) return "";
+    const ys = series.map((p) => p.v);
+    const min = Math.min(...ys);
+    const max = Math.max(...ys);
+    const range = max - min || 1;
+    const stepX = w / Math.max(series.length - 1, 1);
+    return series
+      .map((p, i) => {
+        const x = i * stepX;
+        const y = h - ((p.v - min) / range) * h;
+        return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+  }, [series, h, w]);
+
+  return (
+    <svg width={w} height={h} style={{ display: "block" }}>
+      <polyline points={`0,${h} ${w},${h}`} fill="none" stroke="rgba(255,255,255,.15)" strokeWidth="1" />
+      <path d={d} fill="none" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function Tile({ label, series }: { label: string; series?: Series }) {
+  const last = series?.[series.length - 1];
+  return (
+    <div
+      className="glass"
+      style={{
+        padding: 12,
+        borderRadius: 12,
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        gap: 10,
+        alignItems: "center",
+        border: "1px solid rgba(255,255,255,.12)",
+      }}
+    >
+      <div>
+        <div style={{ fontSize: 12, opacity: 0.8 }}>{label}</div>
+        <div style={{ fontSize: 22, fontWeight: 800 }}>{last ? last.v.toFixed(1) : "—"}</div>
+      </div>
+      <div style={{ color: "#5ec8ff" }}>
+        <Sparkline series={series || []} />
+      </div>
+    </div>
+  );
+}
+
+/* =============== Page =============== */
+const Dashboard: React.FC = () => {
+  // Keep the live hook here so when you turn WIP off, it just works.
+  const { store, connected } = useLiveStore();
+
+  // COVER THE WHOLE PAGE while WIP is on
+  if (WIP_MODE) {
+    return <FullPageWIP />;
+  }
+
+  // normal dashboard (unchanged)
+  return (
+    <div style={{ padding: "18px 4vw" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>Live Telemetry</h1>
+        <span
+          title={connected ? "Connected" : "Disconnected"}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            padding: "2px 8px",
+            borderRadius: 999,
+            background: connected ? "rgba(45,200,90,.15)" : "rgba(255,80,80,.15)",
+            border: `1px solid ${connected ? "rgba(45,200,90,.35)" : "rgba(255,80,80,.35)"}`,
+          }}
+        >
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: connected ? "#2dc85a" : "#ff5050",
+            }}
+          />
+          {connected ? "connected" : "disconnected"}
+        </span>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
+        {WATCH.map(({ key, label }) => (
+          <Tile key={key} label={label} series={store[key]} />
+        ))}
+      </div>
+
+      <div className="glass" style={{ padding: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,.12)" }}>
+        <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>Incoming (recent 5 points per metric)</div>
+        <pre
+          style={{
+            margin: 0,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            fontSize: 12,
+            lineHeight: 1.35,
+            maxHeight: 240,
+            overflow: "auto",
+          }}
+        >
+{JSON.stringify(
+  Object.fromEntries(
+    Object.entries(store).map(([k, v]) => [k, v.slice(-5)])
+  ),
+  null,
+  2
+)}
+        </pre>
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard;

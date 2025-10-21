@@ -6,7 +6,7 @@ import TitleCard from "../components/TitleCard.tsx";
 
 import close_up from "../images/close_up.jpg";
 import fsae from "../images/wesmo-logo/fsae-logo.png";
-import rules from "../files/FSAE_Rules_2024_V1.pdf";
+import rules from "../files/FSAE_Rules_2025_V1.pdf";
 
 import "../App.css";
 

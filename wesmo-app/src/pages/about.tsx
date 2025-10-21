@@ -88,19 +88,20 @@ const AboutWesmo: React.FC = () => {
           </p>
           <ul className="chips">
             <li>Accumulator</li>
-            <li>Motor Controller</li>--
+            <li>Motor Controller</li>
             <li>BMS / Safety</li>
             <li>DAQ & Visualisation</li>
           </ul>
         </div>
-        <div
-          className="feature__media feature__media--two"
-          role="img"
-          aria-label="EV platform and track testing"
-          style={{
-            backgroundImage: `linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)), url(${EvImg})`,
-          }}
-        />
+
+        <div className="feature__media feature__media--two">
+          <img
+            src={EvImg}
+            alt="EV platform and track testing"
+            className="about-media__img"
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        </div>
       </section>
 
       {/* TIMELINE */}

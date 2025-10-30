@@ -1,0 +1,142 @@
+:root {
+  --card-bg: rgba(255,255,255,0.06);
+  --card-border: rgba(255,255,255,0.14);
+  --card-lite: rgba(255,255,255,0.04);
+  --accent: #5ec8ff;
+  --accent-2: #9ef1ff;
+  --ok: #2dc85a;
+  --bad: #ff5050;
+  --text-dim: rgba(58,64,78,0.72);   /* ⬅️ darker so labels are obvious on white UIs */
+}
+
+/* Debug strip so you know the file is loaded */
+.layout-debug::after {
+  content: "";
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: hotpink;
+  z-index: 9999;
+}
+
+/* page */
+.dashboard-root {
+  padding: 18px 4vw 36px;
+}
+
+/* header row */
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.dash-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: .2px;
+}
+
+/* status pill */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  background: var(--card-lite);
+}
+.status-pill .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bad);
+}
+.status-pill.ok { border-color: rgba(45,200,90,.35); background: rgba(45,200,90,.12); }
+.status-pill.ok .dot { background: var(--ok); }
+.status-pill.bad { border-color: rgba(255,80,80,.35); background: rgba(255,80,80,.12); }
+
+/* grid */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+/* tiles */
+.tile {
+  padding: 14px;
+  border-radius: 14px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--card-border);
+  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+.tile:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0,0,0,.18);
+  box-shadow: 0 6px 18px rgba(0,0,0,.12);
+}
+
+/* NEW: ensure label is visible and spaced from the value */
+.tile-info { display: flex; flex-direction: column; }
+.tile-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+.tile-value {
+  font-size: 24px;
+  font-weight: 800;
+}
+.tile-spark { color: var(--accent); }
+
+/* glass styles */
+.glass {
+  background: var(--card-bg);
+  backdrop-filter: blur(6px);
+}
+.glass-lite {
+  background: var(--card-lite);
+  backdrop-filter: blur(3px);
+}
+
+/* details card */
+.details {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+}
+.details-title {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.details-json {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.35;
+  max-height: 240px;
+  overflow: auto;
+}
+
+/* small screens */
+@media (max-width: 640px) {
+  .dash-title { font-size: 22px; }
+  .dashboard-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 440px) {
+  .dashboard-grid { grid-template-columns: 1fr; }
+}

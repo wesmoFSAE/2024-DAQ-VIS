@@ -31,6 +31,7 @@ import Dashboard from "./pages/Dashboard.tsx";   // adjust name if needed
 import Data from "./pages/data.tsx";
 import History from "./pages/history.tsx";
 
+
 export default function App() {
   return (
     <BrowserRouter>

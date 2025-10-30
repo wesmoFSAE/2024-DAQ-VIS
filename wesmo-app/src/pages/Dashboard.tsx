@@ -1,5 +1,7 @@
+// src/pages/Dashboard.tsx
 import React, { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { getSocket } from "../lib/socket.ts";
+import "../styles/dashboard.css"; // ✨ style hook: ensure this path is correct
 
 /* ================= Types ================= */
 type Point = { t: number; v: number };
@@ -25,15 +27,11 @@ const WATCH = [
   { key: "DC Link Circuit Voltage", label: "DC Voltage" },
 ];
 
-// ---- WIP switch ----
-const WIP_MODE = true;
+const WIP_MODE = false;            // leave false to show the dashboard
+const NAV_OFFSET_PX = 72;
 
-// If your top nav is fixed and overlaps, nudge the cover down:
-const NAV_OFFSET_PX = 72; // try 64/72/80 if your navbar is fixed and covers content
-
-/* =============== Full-page WIP cover =============== */
+/* =============== Full-page WIP cover (unchanged) =============== */
 function FullPageWIP() {
-  // lock scroll while the overlay is shown
   useLayoutEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -51,14 +49,12 @@ function FullPageWIP() {
         placeItems: "center",
         minHeight: `calc(100vh - ${NAV_OFFSET_PX}px)`,
         width: "100vw",
-        // background layers
         background:
           "radial-gradient(1200px 600px at 10% -20%, rgba(94,200,255,.22), transparent 50%), " +
           "radial-gradient(900px 500px at 120% 120%, rgba(255,120,120,.16), transparent 40%), " +
           "linear-gradient(120deg, rgba(255,255,255,.04), rgba(255,255,255,0))",
       }}
     >
-      {/* subtle grid */}
       <div
         aria-hidden
         style={{
@@ -71,7 +67,6 @@ function FullPageWIP() {
           pointerEvents: "none",
         }}
       />
-      {/* card */}
       <div
         style={{
           position: "relative",
@@ -126,7 +121,6 @@ function FullPageWIP() {
           >
             See History
           </a>
-          
         </div>
 
         <div
@@ -195,6 +189,8 @@ function useLiveStore() {
     socket.on("data", (payload: any) => {
       if (Array.isArray(payload)) {
         upsert(payload as TelemetryRow[]);
+      } else if (payload && typeof payload === "object" && typeof (payload as any).name === "string") {
+        upsert([payload as TelemetryRow]);
       } else if (payload && typeof payload === "object") {
         const flat: TelemetryRow[] = [];
         for (const [name, row] of Object.entries<any>(payload)) {
@@ -222,7 +218,7 @@ function useLiveStore() {
   return { store, connected };
 }
 
-/* =============== Small UI bits (unchanged) =============== */
+/* =============== UI bits =============== */
 function Sparkline({ series, h = 36, w = 120 }: { series: Series; h?: number; w?: number }) {
   const d = useMemo(() => {
     if (!series || series.length < 2) return "";
@@ -251,23 +247,12 @@ function Sparkline({ series, h = 36, w = 120 }: { series: Series; h?: number; w?
 function Tile({ label, series }: { label: string; series?: Series }) {
   const last = series?.[series.length - 1];
   return (
-    <div
-      className="glass"
-      style={{
-        padding: 12,
-        borderRadius: 12,
-        display: "grid",
-        gridTemplateColumns: "1fr auto",
-        gap: 10,
-        alignItems: "center",
-        border: "1px solid rgba(255,255,255,.12)",
-      }}
-    >
+    <div className="tile glass">{/* ✨ style hook */}
       <div>
-        <div style={{ fontSize: 12, opacity: 0.8 }}>{label}</div>
-        <div style={{ fontSize: 22, fontWeight: 800 }}>{last ? last.v.toFixed(1) : "—"}</div>
+        <div className="tile-label">{label}</div>
+        <div className="tile-value">{last ? last.v.toFixed(1) : "—"}</div>
       </div>
-      <div style={{ color: "#5ec8ff" }}>
+      <div className="tile-spark">
         <Sparkline series={series || []} />
       </div>
     </div>
@@ -276,67 +261,31 @@ function Tile({ label, series }: { label: string; series?: Series }) {
 
 /* =============== Page =============== */
 const Dashboard: React.FC = () => {
-  // Keep the live hook here so when you turn WIP off, it just works.
   const { store, connected } = useLiveStore();
 
-  // COVER THE WHOLE PAGE while WIP is on
-  if (WIP_MODE) {
-    return <FullPageWIP />;
-  }
+  if (WIP_MODE) return <FullPageWIP />;
 
-  // normal dashboard (unchanged)
   return (
-    <div style={{ padding: "18px 4vw" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>Live Telemetry</h1>
-        <span
-          title={connected ? "Connected" : "Disconnected"}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 12,
-            padding: "2px 8px",
-            borderRadius: 999,
-            background: connected ? "rgba(45,200,90,.15)" : "rgba(255,80,80,.15)",
-            border: `1px solid ${connected ? "rgba(45,200,90,.35)" : "rgba(255,80,80,.35)"}`,
-          }}
-        >
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: connected ? "#2dc85a" : "#ff5050",
-            }}
-          />
+    <div className="dashboard-root layout-debug">{/* ✨ style hook */}
+      <div className="dashboard-header glass-lite">
+        <h1 className="dash-title">Live Telemetry</h1>
+        <span className={`status-pill ${connected ? "ok" : "bad"}`} title={connected ? "Connected" : "Disconnected"}>
+          <span className="dot" />
           {connected ? "connected" : "disconnected"}
         </span>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
+      <div className="dashboard-grid">
         {WATCH.map(({ key, label }) => (
           <Tile key={key} label={label} series={store[key]} />
         ))}
       </div>
 
-      <div className="glass" style={{ padding: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,.12)" }}>
-        <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>Incoming (recent 5 points per metric)</div>
-        <pre
-          style={{
-            margin: 0,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-            fontSize: 12,
-            lineHeight: 1.35,
-            maxHeight: 240,
-            overflow: "auto",
-          }}
-        >
+      <div className="details glass">
+        <div className="details-title">Incoming (recent 5 points per metric)</div>
+        <pre className="details-json">
 {JSON.stringify(
-  Object.fromEntries(
-    Object.entries(store).map(([k, v]) => [k, v.slice(-5)])
-  ),
+  Object.fromEntries(Object.entries(store).map(([k, v]) => [k, v.slice(-5)])),
   null,
   2
 )}
@@ -347,3 +296,7 @@ const Dashboard: React.FC = () => {
 };
 
 export default Dashboard;
+
+
+
+

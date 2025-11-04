@@ -1,365 +1,361 @@
 """
 File: mqtt_subscriber.py
-Author: Hannah Murphy
-Date: 2024
-Description: Run by the main app server, contains all MQTT and Redis relevent methods.
+Purpose:
+  - Subscribe to raw CAN-over-MQTT frames published on /wesmo-data (your simulator).
+  - Decode them (BMS / MC / VCU) with your translators.
+  - Save to Postgres.
+  - Publish single-row JSON messages to 'wesmo/telemetry' for the React dashboard.
 
-Copyright (c) 2024 WESMO. All rights reserved.
-This code is part of the WESMO Data Acquisition and Visualisation Project.
+Notes:
+  - Works even if Redis is not running.
+  - No HTTP calls are required to run.
+  - Payload shape matches your working PowerShell injector:
+      {"ts": 1711111111111, "source": "CAN", "name": "...", "value": 123.4, "unit": "degC"}
 """
 
-import requests
-import threading
-import random
-import redis
-import pickle
+from __future__ import annotations
+
 import datetime
 import json
-import paho.mqtt.client as mqtt_client
-import datetime
+import pickle
+import random
+import threading
+import time
+from typing import Any, Dict, List, Optional, Union
 
+import paho.mqtt.client as mqtt_client
+
+# Optional dependencies (safe if missing/off)
+try:
+    import redis  # type: ignore
+except Exception:  # pragma: no cover
+    redis = None  # type: ignore
+
+# ---- Local modules ----
 from MCTranslatorClass import MCTranslator
 from BMSTranslatorClass import BMSTranslator
 from VCUTranslatorClass import VCUTranslator
+
 from database import (
     start_postgresql,
     setup_db,
     connect_to_db,
     create_mc_table,
-    save_to_db_mc,
-    save_to_db_bms,
     create_bms_table,
     create_vcu_table,
+    save_to_db_mc,
+    save_to_db_bms,
     save_to_db_vcu,
 )
 
-""" GLOBAL VARIABLES
-Set the Parameter of MQTT Broker Connection
-Set the address, port and topic of MQTT Broker connection. 
-At the same time, we call the Python function random.randint 
-to randomly generate the MQTT client id.
-"""
+# =============================================================================
+# Config
+# =============================================================================
 
-broker = "localhost" # 52.64.83.72 before
-port = 1883
-topic = "/wesmo-data"
-client_id = f"wesmo-{random.randint(0, 100)}"
-username = "wesmo"
-password = "wesmo2025" # public 
-client_list = []
+BROKER = "localhost"
+PORT = 1883
 
-TIMEOUT = 30
-timeout_timer = None
-is_timed_out = False
+RAW_TOPIC = "/wesmo-data"       # simulator publishes here (leading slash)
+UI_TOPIC = "wesmo/telemetry"    # dashboard listens here (no slash)
 
-# COMPONENT TRANSLATORS
+# If you add authentication to Mosquitto, set these;
+# otherwise leave commented for anonymous dev broker.
+# USERNAME = "wesmo"
+# PASSWORD = "wesmo2025"
+
+# Optional Redis caching (for latest values). Keep False for dev.
+REDIS_ENABLED = False
+
+# Watchdog for incoming frames (seconds)
+TIMEOUT_SEC = 30
+
+# =============================================================================
+# Globals
+# =============================================================================
+
+client_id = f"wesmo-sub-{random.randint(1000, 9999)}"
+dash_pub_id = f"wesmo-dash-pub-{random.randint(1000, 9999)}"
+
+# Translators
 mc_translator = MCTranslator()
 bms_translator = BMSTranslator()
 vcu_translator = VCUTranslator()
 
-# REDIS
+# DB globals
+cursor = None
+conn = None
 
-def start_redis():
-    return redis.Redis(host="localhost", port=6379, db=0)
+# Redis (optional)
+redis_client: Optional[Any] = None
+_redis_warned = False
 
-def query_all_latest_data():
-    redis_client = start_redis()
-    keys = redis_client.keys("*")
-    all_data = []
-    for key in redis_client.scan_iter("*"):
-        data = redis_client.get(key)
-        if isinstance(data, bytes):
-            try:
-                deserialized_data = pickle.loads(data)
-                all_data.append({
-                    "time": deserialized_data["time"],
-                    "name": deserialized_data["name"],
-                    "value": deserialized_data["value"],
-                    "unit": deserialized_data["unit"]
-                })
-            except pickle.PickleError as e:
-                print(f"{datetime.datetime.now()} -! # Error deserializing data for key {key}: {e}")
-    return all_data
+# MQTT publisher for UI
+_dash_pub: Optional[mqtt_client.Client] = None
 
-def query_latest(data_name):
-    redis_client = start_redis()
-    data = redis_client.get(data_name)
-    if isinstance(data, bytes):
-        try:
-            deserialized_data = pickle.loads(data)
-            return {
-                "time": deserialized_data.get("time", ""),
-                "name": deserialized_data.get("name", ""),
-                "value": deserialized_data.get("value", ""),
-                "unit": deserialized_data.get("unit", "")
-            }
-        except pickle.PickleError as e:
-            print(f"{datetime.datetime.now()} -! # Error deserializing data for {data_name}: {e}")
-    return None
+# Watchdog
+timeout_timer: Optional[threading.Timer] = None
+timed_out = False
 
-def cache_data(time, value):
-    redis_client = start_redis()
+
+# =============================================================================
+# Utilities
+# =============================================================================
+
+def log(msg: str) -> None:
+    ts = datetime.datetime.now().strftime("%H:%M:%S")
+    print(f"[{ts}] {msg}")
+
+
+def now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+# =============================================================================
+# Redis (optional)
+# =============================================================================
+
+def start_redis() -> Optional[Any]:
+    if not REDIS_ENABLED or redis is None:
+        return None
+    try:
+        r = redis.Redis(host="localhost", port=6379, db=0, socket_timeout=1.0)
+        r.ping()
+        log("[REDIS] connected")
+        return r
+    except Exception as e:
+        log(f"[REDIS] not available ({e}). Continuing without Redis.")
+        return None
+
+
+# =============================================================================
+# UI Publisher
+# =============================================================================
+
+def start_dash_publisher() -> None:
+    """Dedicated MQTT client used to publish UI messages to wesmo/telemetry."""
+    global _dash_pub
+
+    pub = mqtt_client.Client(
+        client_id=dash_pub_id,
+        protocol=mqtt_client.MQTTv311,
+        transport="tcp",
+    )
+    # If using auth:
+    # pub.username_pw_set(USERNAME, PASSWORD)
+
+    def on_connect(c, u, f, rc):
+        log(f"[DASH] connected rc={rc} as {dash_pub_id}")
+
+    pub.on_connect = on_connect
+    pub.connect(BROKER, PORT, keepalive=30)
+    pub.loop_start()
+    _dash_pub = pub
+    log(f"[DASH] publisher started -> topic '{UI_TOPIC}'")
+
+
+def publish_for_ui(name: str, value: Any, unit: str = "", source: str = "CAN") -> None:
+    """Always push a single-row message for the React dashboard."""
+    if _dash_pub is None or not name:
+        return
+    try:
+        v = float(value) if isinstance(value, (int, float)) else value
+        payload = {
+            "ts": now_ms(),
+            "source": source,
+            "name": name,
+            "value": v,
+            "unit": unit or "",
+        }
+        j = json.dumps(payload, separators=(",", ":"))
+        _dash_pub.publish(UI_TOPIC, j, qos=0, retain=False)
+        # Verbose logging to see live traffic
+        log(f"[PUB] {name} = {v} {unit}")
+    except Exception as e:
+        log(f"[PUB] error for {name}: {e}")
+
+
+# =============================================================================
+# Cache + Publish (safe)
+# =============================================================================
+
+def cache_data(time_parts, value) -> None:
+    """
+    Safe cache + publish:
+    - **Always** publish to the dashboard so UI updates even when Redis is down.
+    - Optionally cache the latest value in Redis when enabled.
+    """
+    # 1) Publish to UI (first, so failures don't block UI updates)
+    try:
+        publish_for_ui(
+            value.get("name", ""),
+            value.get("value", 0),
+            value.get("unit", ""),
+            source="CAN",
+        )
+    except Exception as e:
+        log(f"[PUB] error in cache_data publish: {e}")
+
+    # 2) Redis cache (optional)
+    if not REDIS_ENABLED or redis_client is None:
+        return
+
+    global _redis_warned
     try:
         redis_key = value["name"]
-        redis_value = {
-            "time": time[1] + " " + time[2],
+        redis_val = {
+            "time": f"{time_parts[1]} {time_parts[2]}",
             "name": value["name"],
             "value": value["value"],
-            "unit": value["unit"]
+            "unit": value.get("unit", ""),
         }
-        redis_client.set(redis_key, pickle.dumps(redis_value))
-    except Exception as e:
-        print(f"{datetime.datetime.now()} -! # Error with {redis_key}: {e}")
+        redis_client.set(redis_key, pickle.dumps(redis_val))
+    except Exception as e:  # log once
+        if not _redis_warned:
+            log(f"[REDIS] cache disabled ({e})")
+            _redis_warned = True
 
-def query_data(data_name, cursor, conn):
-    try:
-        if data_name in ["Motor Temperature", "Motor Speed", "DC Link Circuit Voltage"]:
-            query = f"SELECT time, value FROM MOTOR_CONTROLLER WHERE name = '{data_name}' ORDER BY time DESC LIMIT 50;"
-        elif data_name == "Wheel Speed":
-            query = ("SELECT time, value, name FROM VEHICLE_CONTROLL_UNIT WHERE name IN "
-                     "('Wheel Speed RR', 'Wheel Speed RL', 'Wheel Speed FR', 'Wheel Speed FL') "
-                     "ORDER BY time DESC LIMIT 50;")
-        elif data_name == "Brakes and APPS":
-            query = ("SELECT time, value, name FROM VEHICLE_CONTROLL_UNIT WHERE name IN "
-                     "('Break Pressure Rear', 'Break Pressure Front', 'Accelerator Travel 1', 'Accelerator Travel 2') "
-                     "ORDER BY time DESC LIMIT 50;")
-        elif data_name in [
-            "Battery Temperature", "Battery Current", "Battery State of Charge",
-            "Battery Voltage", "Battery Power", "Battery DCL",
-            "Battery Status", "Battery Checksum", "Predictive State of Charge"]:
-            query = f"SELECT time, value FROM BATTERY_MANAGEMENT_SYSTEM WHERE name = '{data_name}' ORDER BY time DESC LIMIT 50;"
+
+# =============================================================================
+# Subscriber
+# =============================================================================
+
+def connect_subscriber() -> mqtt_client.Client:
+    def on_connect(c, u, f, rc):
+        if rc == 0:
+            log(f"[MQTT] connected to {BROKER}:{PORT}")
         else:
-            print(f"{datetime.datetime.now()} -! # ERROR: Data '{data_name}' does not exist in database.")
-            return []
+            log(f"[MQTT] failed rc={rc}")
 
-        cursor.execute(query)
-        data = cursor.fetchall()
-        converted_data = []
-        if data_name in ["Wheel Speed", "Brakes and APPS"]:
-            for dt, value, name in data:
-                timestamp = int(dt.timestamp())
-                converted_data.append({"timestamp": timestamp, "value": value, "name": name.strip()})
-        else:
-            for dt, value in data:
-                timestamp = int(dt.timestamp())
-                converted_data.append({"timestamp": timestamp, "value": value})
-        return converted_data
-    except Exception as e:
-        print(f"{datetime.datetime.now()} -! # Error collecting data from: {e}")
-        return []
-
-# MQTT
-
-def connect_mqtt():
-    try:
-        from paho.mqtt.enums import CallbackAPIVersion
-        CB_VER = CallbackAPIVersion.VERSION2
-    except ImportError:
-        CB_VER = 2  # older/newer fallback
-    def on_connect(client, userdata, flags, rc, properties=None):
-        if rc != 0:
-            print(f"Failed to connect, return code {rc}")
-
-    client = mqtt_client.Client(
+    sub = mqtt_client.Client(
         client_id=client_id,
         protocol=mqtt_client.MQTTv311,
-        callback_api_version=CallbackAPIVersion.VERSION2  # silences deprecation warning
+        transport="tcp",
     )
-    client.username_pw_set(username, password)
-    client.on_connect = on_connect
-    client.connect(broker, port)
-    return client
+    # If using auth:
+    # sub.username_pw_set(USERNAME, PASSWORD)
+
+    sub.on_connect = on_connect
+    sub.connect(BROKER, PORT, keepalive=30)
+    return sub
 
 
-
-def check_for_faults(raw):
-    """
-    raw: dict or list[dict] each having 'name' and 'value' (numeric).
-    Prints WARN/FAULT with cooldown and returns a list of events.
-    """
-
-    # ---------------- thresholds & config ----------------
-    fault_thresholds = {
-        "Battery Temperature":        {"max": 60,  "min": 0},
-        "Battery Voltage":            {"max": 336, "warn": 320, "min": 0},   # 288V nominal
-        "Battery Current":            {"max": 240, "warn": 200, "min": -50},
-        "Motor Temperature":          {"max": 80},
-        "Motor Speed":                {"max": 10000},
-        "DC Link Circuit Voltage":    {"max": 450},
-        "Accelerator Travel 1":       {"max": 100},
-        "Accelerator Travel 2":       {"max": 100},
-        "Break Pressure Rear":        {"max": 100},
-        "Break Pressure Front":       {"max": 100},
-        "Wheel Speed FL":             {"max": 200},
-        "Wheel Speed FR":             {"max": 200},
-        "Wheel Speed RL":             {"max": 200},
-        "Wheel Speed RR":             {"max": 200},
-    }
-    COOLDOWN_SEC = 5
-    # -----------------------------------------------------
-
-    # one-time store for debounce
-    if not hasattr(check_for_faults, "_last_report"):
-        check_for_faults._last_report = {}   # key: (name, status) -> ts
-
-    # normalize input
-    if isinstance(raw, dict):
-        data = [raw]
-    elif isinstance(raw, list):
-        data = [d for d in raw if isinstance(d, dict)]
-    else:
-        return []
-
-    now_ts = datetime.datetime.now().timestamp()
-    events = []
-
-    for point in data:
-        name  = point.get("name")
-        value = point.get("value")
-
-        if name not in fault_thresholds or not isinstance(value, (int, float)):
-            continue
-
-        limits = fault_thresholds[name]
-        max_v  = limits.get("max")
-        min_v  = limits.get("min")
-        warn_v = limits.get("warn")
-
-        status = None
-        msg    = None
-
-        # High-side checks
-        if max_v is not None and value > max_v:
-            status = "FAULT_HIGH"
-            msg = f"[FAULT] {name} exceeded max threshold: {value} > {max_v}"
-        elif warn_v is not None and value >= warn_v and (max_v is None or value <= max_v):
-            status = "WARN_HIGH"
-            msg = f"[WARN]  {name} approaching limit: {value} ≥ {warn_v}"
-
-        # Low-side check (only if no high-side status already)
-        if status is None and min_v is not None and value < min_v:
-            status = "FAULT_LOW"
-            msg = f"[FAULT] {name} below min threshold: {value} < {min_v}"
-
-        if status:
-            key = (name, status)
-            last = check_for_faults._last_report.get(key, 0)
-            if now_ts - last >= COOLDOWN_SEC:
-                print(msg)
-                check_for_faults._last_report[key] = now_ts
-                events.append({"name": name, "value": value, "status": status, "time": now_ts})
-
-    return events
+def reset_timeout() -> None:
+    global timeout_timer, timed_out
+    if timeout_timer:
+        timeout_timer.cancel()
+    timeout_timer = threading.Timer(TIMEOUT_SEC, _on_timeout)
+    timeout_timer.daemon = True
+    timeout_timer.start()
+    if timed_out:
+        timed_out = False
+        log("[WATCHDOG] activity resumed")
 
 
-
-
-def subscribe(client, redis_client):
-    def on_message(client, userdata, msg):
-        global is_timed_out
-        reset_timeout()
-        if is_timed_out:
-            on_timeout(False)
-
-        raw_payload = msg.payload
+def _on_timeout() -> None:
+    global timed_out
+    timed_out = True
+    log("[WATCHDOG] timeout (no raw frames)")
+    if redis_client:
         try:
-            raw_text = raw_payload.decode()
-        except UnicodeDecodeError:
-            print(f"{datetime.datetime.now()} -! # Can't decode payload bytes")
+            redis_client.flushdb()
+            log("[WATCHDOG] redis flushed")
+        except Exception as e:
+            log(f"[WATCHDOG] redis flush error: {e}")
+
+
+def _iter_rows(decoded: Any) -> List[Dict[str, Any]]:
+    if not decoded:
+        return []
+    if isinstance(decoded, list):
+        return [r for r in decoded if isinstance(r, dict)]
+    if isinstance(decoded, dict):
+        return [decoded]
+    return []
+
+
+def _handle_block(label: str, decoded: Any) -> None:
+    rows = _iter_rows(decoded)
+    if not rows:
+        return
+
+    # Save to DB (preserve prior behavior)
+    if label == "BMS":
+        save_to_db_bms(cursor, conn, decoded)
+    elif label == "MC":
+        # decoded[1] is the PDO integer in the original translator output
+        pdo = decoded[1] if isinstance(decoded, list) and len(decoded) > 1 else None
+        save_to_db_mc(cursor, conn, decoded, pdo)
+    elif label == "VCU":
+        save_to_db_vcu(cursor, conn, decoded)
+
+    # Publish each numeric row to UI (also cached by cache_data from DB layer)
+    for r in rows:
+        name = r.get("name")
+        value = r.get("value")
+        unit = r.get("unit", "")
+        if name and isinstance(value, (int, float)):
+            publish_for_ui(name, value, unit, source=label)
+
+
+def subscribe(sub: mqtt_client.Client) -> None:
+    def on_message(client, userdata, msg):
+        reset_timeout()
+        try:
+            raw_text = msg.payload.decode("utf-8", errors="ignore")
+        except Exception:
+            log("[SUB] decode error")
             return
 
         normalized = raw_text.lower().replace(" ", "").replace("\t", "")
 
-        def process_and_fault(save_fn, decoded):
-            if decoded:
-                save_fn(cursor, conn, decoded)
-                check_for_faults(decoded)
-
-        # helper to process a decoded block
-        def handle_block(label, decoded):
-            if not decoded:
-                return
-            # save to DB (keep your existing calls)
-            if label == "BMS":
-                save_to_db_bms(cursor, conn, decoded)
-            elif label == "MC":
-                save_to_db_mc(cursor, conn, decoded, decoded[1] if isinstance(decoded, list) and len(decoded) > 1 else None)
-            elif label == "VCU":
-                save_to_db_vcu(cursor, conn, decoded)
-
-            # --- NEW: collect fault/warn events
-            events = check_for_faults(decoded)
-            # optional: do something with events
-            # if events:
-            #     safe_request("post", "http://localhost:5001/faults", json=events)
-            #     redis_client.rpush("fault_events", pickle.dumps(events))
-
-
-        # Battery Management System
+        # BMS
         if "id:004d" in normalized:
-            data = bms_translator.decode(raw_text)
-            process_and_fault(save_to_db_bms, data)
+            _handle_block("BMS", bms_translator.decode(raw_text))
 
-        # Motor Controller
-        if any(f"id:{id_}" in normalized for id_ in ["0181", "0281", "0381", "0481"]):
-            data = mc_translator.decode(raw_text)
-            if data:
-                save_to_db_mc(cursor, conn, data, data[1] if isinstance(data, list) and len(data) > 1 else None)
-                check_for_faults(data)
+        # MC group: 0181/0281/0381/0481
+        if any(f"id:{i}" in normalized for i in ["0181", "0281", "0381", "0481"]):
+            _handle_block("MC", mc_translator.decode(raw_text))
 
-        # Vehicle Control Unit
-        if any(f"id:{id_}" in normalized for id_ in ["0010", "0011", "0012", "0201"]):
-            data = vcu_translator.decode(raw_text)
-            if data:
-                save_to_db_vcu(cursor, conn, data)
-                check_for_faults(data)
+        # VCU group: 0010/0011/0012/0201
+        if any(f"id:{i}" in normalized for i in ["0010", "0011", "0012", "0201"]):
+            _handle_block("VCU", vcu_translator.decode(raw_text))
 
-    client.subscribe(topic)
-    client.on_message = on_message
+    sub.subscribe(RAW_TOPIC, qos=0)
+    sub.on_message = on_message
+    log(f"[SUB] subscribed to '{RAW_TOPIC}'")
 
 
-def reset_timeout():
-    global timeout_timer
-    if timeout_timer:
-        timeout_timer.cancel()
-    timeout_timer = threading.Timer(TIMEOUT, lambda: on_timeout(True))
-    timeout_timer.start()
+# =============================================================================
+# Entrypoint
+# =============================================================================
 
-def on_timeout(timeout):
-    global is_timed_out, redis_client
-    url = "http://localhost:5001/timeout"
-    is_timed_out = not is_timed_out
-    redis_client.flushdb()
-    try:
-        response = requests.post(
-            url, json={"timeout": timeout}, headers={"Content-Type": "application/json"}
-        )
-        if response.status_code != 200:
-            print(f"{datetime.datetime.now()} -! # Failed: {response.status_code} - {response.json()}")
-    except requests.exceptions.RequestException as e:
-        print(f"{datetime.datetime.now()} -! # Error making request: {e}")
-
-def start_mqtt_subscriber():
+def start_mqtt_subscriber() -> None:
     global cursor, conn, redis_client
+
+    # DB init
     cursor, conn = start_postgresql()
     setup_db(cursor, conn)
     cursor, conn = connect_to_db()
-
     create_mc_table(cursor, conn)
     create_bms_table(cursor, conn)
     create_vcu_table(cursor, conn)
 
+    # Optional Redis
     redis_client = start_redis()
-    global is_timed_out
-    is_timed_out = False
 
+    # UI publisher
+    start_dash_publisher()
+
+    # Raw subscriber
     reset_timeout()
-    client = connect_mqtt()
-    subscribe(client, redis_client)
-    client.loop_forever()
+    sub = connect_subscriber()
+    subscribe(sub)
+    sub.loop_forever()
 
-def main():
+
+def main() -> None:
     start_mqtt_subscriber()
+
 
 if __name__ == "__main__":
     main()

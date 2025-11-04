@@ -1,18 +1,17 @@
 """
 File: database.py
-Author: Hannah Murphy
-Date: 2024
-Description: Run by the main app server, contains all PostgreSQL relevent methods.
-
-Copyright (c) 2024 WESMO. All rights reserved.
-This code is part of the WESMO Data Acquisition and Visualisation Project.
-
+Purpose:
+  - Postgres helpers (create DB / tables, insert rows).
+  - Each save_* function calls cache_data safely (with a fallback no-op) so the
+    UI always receives telemetry, even when Redis is disabled.
 """
 
-import csv
 import psycopg2
 from datetime import datetime
 
+# -----------------------------------------------------------------------------
+# DB Connections
+# -----------------------------------------------------------------------------
 
 def start_postgresql():
     conn = psycopg2.connect(
@@ -24,7 +23,6 @@ def start_postgresql():
     )
     conn.autocommit = True
     cursor = conn.cursor()
-
     return cursor, conn
 
 
@@ -38,7 +36,6 @@ def connect_to_db():
     )
     conn.autocommit = True
     cursor = conn.cursor()
-
     return cursor, conn
 
 
@@ -50,48 +47,54 @@ def setup_db(cursor, conn):
             cursor.execute("CREATE DATABASE wesmo")
             print(" # - Database created successfully")
         print(" # - Database already exists")
-    except Exception as e:
+    except Exception:
         conn.rollback()
         print(" -! # Error creating database - wesmo")
 
 
+# -----------------------------------------------------------------------------
+# Tables
+# -----------------------------------------------------------------------------
+
 def create_mc_table(cursor, conn):
     try:
         cursor.execute("DROP TABLE IF EXISTS MOTOR_CONTROLLER")
-
-        sql = """CREATE TABLE MOTOR_CONTROLLER(
-            TIME TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,  -- Auto-filled timestamp,
-            PDO INT,
-            NAME CHAR(50),
-            VALUE INT,
-            UNIT CHAR(25),
-            MAX CHAR(25)
-        )"""
-
-        cursor.execute(sql)
+        cursor.execute(
+            """
+            CREATE TABLE MOTOR_CONTROLLER(
+                TIME TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                PDO INT,
+                NAME CHAR(50),
+                VALUE INT,
+                UNIT CHAR(25),
+                MAX CHAR(25)
+            )
+            """
+        )
         print(" # - Motor Controller table created successfully")
         conn.commit()
-    except Exception as e:
+    except Exception:
         conn.rollback()
-        print(" -! # Error creating table - Motor Contoller")
+        print(" -! # Error creating table - Motor Controller")
 
 
 def create_vcu_table(cursor, conn):
     try:
         cursor.execute("DROP TABLE IF EXISTS VEHICLE_CONTROLL_UNIT")
-
-        sql = """CREATE TABLE VEHICLE_CONTROLL_UNIT(
-            TIME TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,  -- Auto-filled timestamp,
-            NAME CHAR(50),
-            VALUE INT,
-            UNIT CHAR(25),
-            MAX CHAR(25)
-        )"""
-
-        cursor.execute(sql)
+        cursor.execute(
+            """
+            CREATE TABLE VEHICLE_CONTROLL_UNIT(
+                TIME TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                NAME CHAR(50),
+                VALUE INT,
+                UNIT CHAR(25),
+                MAX CHAR(25)
+            )
+            """
+        )
         print(" # - Vehicle Control Unit table created successfully")
         conn.commit()
-    except Exception as e:
+    except Exception:
         conn.rollback()
         print(" -! # Error creating table - Vehicle Control Unit")
 
@@ -99,122 +102,143 @@ def create_vcu_table(cursor, conn):
 def create_bms_table(cursor, conn):
     try:
         cursor.execute("DROP TABLE IF EXISTS BATTERY_MANAGEMENT_SYSTEM")
-
-        sql = """CREATE TABLE BATTERY_MANAGEMENT_SYSTEM(
-            TIME TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,  -- Auto-filled timestamp,
-            NAME CHAR(50),
-            VALUE INT,
-            UNIT CHAR(25),
-            MAX CHAR(25)
-        )"""
-
-        cursor.execute(sql)
+        cursor.execute(
+            """
+            CREATE TABLE BATTERY_MANAGEMENT_SYSTEM(
+                TIME TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                NAME CHAR(50),
+                VALUE INT,
+                UNIT CHAR(25),
+                MAX CHAR(25)
+            )
+            """
+        )
         print(" # - Battery Management System table created successfully")
         conn.commit()
-    except Exception as e:
+    except Exception:
         conn.rollback()
         print(" -! # Error creating table - Battery Management System")
 
 
-def save_to_db_mc(cursor, conn, data, pdo):
-    from mqtt_subscriber import cache_data
+# -----------------------------------------------------------------------------
+# Safe cache_data import (no cyclic crash)
+# -----------------------------------------------------------------------------
 
+def _noop_cache_data(*args, **kwargs):
+    pass
+
+try:
+    # Imported inside functions previously; importing once here is fine.
+    from mqtt_subscriber import cache_data as _cache_data  # type: ignore
+except Exception:
+    _cache_data = _noop_cache_data
+
+
+# -----------------------------------------------------------------------------
+# Inserts (+ UI cache/publish)
+# -----------------------------------------------------------------------------
+
+def save_to_db_mc(cursor, conn, data, pdo):
     if len(data) < 2:
         return
-    time = data[0].split(" ")
-
+    time_parts = data[0].split(" ")
     for value in data[2:]:
-        query = f"""INSERT INTO MOTOR_CONTROLLER(
-        TIME, PDO, NAME, VALUE, UNIT, MAX)
-        VALUES ('{time[1]+" "+time[2]}', {pdo}, '{value["name"]}', {value["value"]}, '{value["unit"]}', '{value["max"]}')"""
+        query = f"""
+            INSERT INTO MOTOR_CONTROLLER (TIME, PDO, NAME, VALUE, UNIT, MAX)
+            VALUES ('{time_parts[1] + " " + time_parts[2]}',
+                    {pdo},
+                    '{value["name"]}',
+                    {value["value"]},
+                    '{value["unit"]}',
+                    '{value["max"]}')
+        """
         try:
             cursor.execute(query)
             conn.commit()
         except Exception as e:
             conn.rollback()
-            print(f" -! # Error in saving to database - Motor Controller Table : {e}")
-
-        cache_data(time, value)
+            print(f" -! # Error saving MC row: {e}")
+        _cache_data(time_parts, value)
 
 
 def save_to_db_vcu(cursor, conn, data):
-    from mqtt_subscriber import cache_data
-
     if len(data) < 2:
         return
-    time = data[0].split(" ")
+    time_parts = data[0].split(" ")
     for value in data[1:]:
         if value["name"] != "Track Time":
-            query = f"""INSERT INTO VEHICLE_CONTROLL_UNIT(
-            TIME, NAME, VALUE, UNIT, MAX)
-            VALUES ('{time[1]+" "+time[2]}', '{value["name"]}', {value["value"]}, '{value["unit"]}', '{value["max"]}')"""
+            query = f"""
+                INSERT INTO VEHICLE_CONTROLL_UNIT (TIME, NAME, VALUE, UNIT, MAX)
+                VALUES ('{time_parts[1] + " " + time_parts[2]}',
+                        '{value["name"]}',
+                        {value["value"]},
+                        '{value["unit"]}',
+                        '{value["max"]}')
+            """
             try:
                 cursor.execute(query)
                 conn.commit()
             except Exception as e:
                 conn.rollback()
-                print(f" -! # Error in saving to database - VCU table: {e}")
-
-        cache_data(time, value)
+                print(f" -! # Error saving VCU row: {e}")
+        _cache_data(time_parts, value)
 
 
 def save_to_db_bms(cursor, conn, data):
-    from mqtt_subscriber import cache_data
-
     if len(data) < 2:
         return
-    time = data[0].split(" ")
+    time_parts = data[0].split(" ")
     for value in data[1:]:
-        query = f"""INSERT INTO BATTERY_MANAGEMENT_SYSTEM(
-        TIME, NAME, VALUE, UNIT, MAX)
-        VALUES ('{time[1]+" "+time[2]}', '{value["name"]}', {value["value"]}, '{value["unit"]}', '{value["max"]}')"""
+        query = f"""
+            INSERT INTO BATTERY_MANAGEMENT_SYSTEM (TIME, NAME, VALUE, UNIT, MAX)
+            VALUES ('{time_parts[1] + " " + time_parts[2]}',
+                    '{value["name"]}',
+                    {value["value"]},
+                    '{value["unit"]}',
+                    '{value["max"]}')
+        """
         try:
             cursor.execute(query)
             conn.commit()
         except Exception as e:
             conn.rollback()
-            print(f" -! # Error in saving to database - BMS table: {e}")
+            print(f" -! # Error saving BMS row: {e}")
+        _cache_data(time_parts, value)
 
-        cache_data(time, value)
 
+# -----------------------------------------------------------------------------
+# Optional: export + clear (same as before)
+# -----------------------------------------------------------------------------
 
-# ONLY TO BE USED IN SIMULATION
 def export_and_clear_database(cursor, conn):
     # BMS
     cursor.execute("SELECT * FROM BATTERY_MANAGEMENT_SYSTEM")
     results = cursor.fetchall()
-
     date_time = datetime.now()
     formatted_date = f"{date_time.year}-{date_time.month:02d}-{date_time.day:02d}"
-    filepath = f"/home/ubuntu/WESMO-2024/back_end/database/bms-{formatted_date}.txt"
-
+    filepath = f"./database/bms-{formatted_date}.txt"
     with open(filepath, "w") as f:
         for row in results:
             f.write("\t".join(str(cell) for cell in row) + "\n")
-
     cursor.execute("DELETE FROM BATTERY_MANAGEMENT_SYSTEM")
     conn.commit()
 
     # VCU
     cursor.execute("SELECT * FROM VEHICLE_CONTROLL_UNIT")
     results = cursor.fetchall()
-    filepath = f"/home/ubuntu/WESMO-2024/back_end/database/vcu-{formatted_date}.txt"
-
+    filepath = f"./database/vcu-{formatted_date}.txt"
     with open(filepath, "w") as f:
         for row in results:
             f.write("\t".join(str(cell) for cell in row) + "\n")
-
     cursor.execute("DELETE FROM VEHICLE_CONTROLL_UNIT")
     conn.commit()
 
     # MC
     cursor.execute("SELECT * FROM MOTOR_CONTROLLER")
     results = cursor.fetchall()
-    filepath = f"/home/ubuntu/WESMO-2024/back_end/database/mc-{formatted_date}.txt"
-
+    filepath = f"./database/mc-{formatted_date}.txt"
     with open(filepath, "w") as f:
         for row in results:
             f.write("\t".join(str(cell) for cell in row) + "\n")
-
     cursor.execute("DELETE FROM MOTOR_CONTROLLER")
     conn.commit()

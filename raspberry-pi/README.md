@@ -12,6 +12,12 @@ all the messages, may require tidying up in final lines of the result file '/dat
 
 Using a Python enviroment run `python3 run_simulation.py`, this will simulate the results which the Raspberry Pi collects.
 
+You can point the simulator at a different broker by exporting the same
+environment variables described for the backend (`WESMO_MQTT_BROKER`,
+`WESMO_MQTT_PORT`, `WESMO_MQTT_USERNAME`, etc.). When these are not set the
+script defaults to `localhost:1883` without authentication, matching the
+development instructions above.
+
 ## CAN Bus
 The can bus for the raspberry pi is a 2-CH CAN HAT. The links for each hat is set up on system start up.
 The development plan for the telemetry system is a single channel in the EV vehicle. For testing purposes

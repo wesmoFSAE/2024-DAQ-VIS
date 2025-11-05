@@ -11,22 +11,34 @@ This code is part of the WESMO Data Acquisition and Visualisation Project.
 Usage: Python3 simulate.py
 """
 
+import os
 import random
 import time
+from typing import Optional
+
 from paho.mqtt import client as mqtt_client
 
 """ GLOBAL VARIABLES
 Set the Parameter of MQTT Broker Connection
-Set the address, port and topic of MQTT Broker connection. 
-At the same time, we call the Python function random.randint 
+Set the address, port and topic of MQTT Broker connection.
+At the same time, we call the Python function random.randint
 to randomly generate the MQTT client id.
 """
-broker = "localhost" # 52.64.83.72 before
-port = 1883
-topic = "/wesmo-data"
+
+
+def _env(name: str, default: Optional[str] = None) -> Optional[str]:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return value
+
+
+broker = _env("WESMO_MQTT_BROKER", "localhost")  # 52.64.83.72 before
+port = int(_env("WESMO_MQTT_PORT", "1883"))
+topic = _env("WESMO_RAW_TOPIC", "/wesmo-data")
 client_id = f"wesmo-{random.randint(0, 100)}"
-username = "wesmo"
-password = "wesmo2025" # public 
+username = _env("WESMO_MQTT_USERNAME")
+password = _env("WESMO_MQTT_PASSWORD")  # public credentials if supplied
 
 
 def connect_mqtt() -> mqtt_client:
@@ -44,7 +56,8 @@ def connect_mqtt() -> mqtt_client:
                 print("Failed to connect, return code %d\n", reason_code)
 
         client = mqtt_client.Client(mqtt_client.CallbackAPIVersion.VERSION2, client_id)
-        client.username_pw_set(username, password)
+        if username:
+            client.username_pw_set(username, password)
         client.on_connect = on_connect
         client.connect(broker, port)
         return client

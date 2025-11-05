@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import pickle
 import random
 import threading
 import time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import paho.mqtt.client as mqtt_client
 
@@ -49,25 +50,30 @@ from database import (
 )
 
 # =============================================================================
-# Config
+# Config (env overridable so the simulator + dashboard can share settings)
 # =============================================================================
 
-BROKER = "localhost"
-PORT = 1883
+def _env(name: str, default: Optional[str] = None) -> Optional[str]:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return value
 
-RAW_TOPIC = "/wesmo-data"       # simulator publishes here (leading slash)
-UI_TOPIC = "wesmo/telemetry"    # dashboard listens here (no slash)
 
-# If you add authentication to Mosquitto, set these;
-# otherwise leave commented for anonymous dev broker.
-# USERNAME = "wesmo"
-# PASSWORD = "wesmo2025"
+BROKER = _env("WESMO_MQTT_BROKER", "localhost")
+PORT = int(_env("WESMO_MQTT_PORT", "1883"))
 
-# Optional Redis caching (for latest values). Keep False for dev.
-REDIS_ENABLED = False
+RAW_TOPIC = _env("WESMO_RAW_TOPIC", "/wesmo-data")  # simulator publishes here
+UI_TOPIC = _env("WESMO_UI_TOPIC", "wesmo/telemetry")  # dashboard listens here
+
+USERNAME = _env("WESMO_MQTT_USERNAME")
+PASSWORD = _env("WESMO_MQTT_PASSWORD")
+
+REDIS_ENABLED = _env("WESMO_ENABLE_REDIS", "0").lower() in {"1", "true", "yes", "on"}
+DB_ENABLED = _env("WESMO_ENABLE_DB", "1").lower() not in {"0", "false", "no", "off"}
 
 # Watchdog for incoming frames (seconds)
-TIMEOUT_SEC = 30
+TIMEOUT_SEC = int(_env("WESMO_TIMEOUT_SEC", "30"))
 
 # =============================================================================
 # Globals
@@ -140,8 +146,8 @@ def start_dash_publisher() -> None:
         protocol=mqtt_client.MQTTv311,
         transport="tcp",
     )
-    # If using auth:
-    # pub.username_pw_set(USERNAME, PASSWORD)
+    if USERNAME:
+        pub.username_pw_set(USERNAME, PASSWORD or None)
 
     def on_connect(c, u, f, rc):
         log(f"[DASH] connected rc={rc} as {dash_pub_id}")
@@ -231,8 +237,8 @@ def connect_subscriber() -> mqtt_client.Client:
         protocol=mqtt_client.MQTTv311,
         transport="tcp",
     )
-    # If using auth:
-    # sub.username_pw_set(USERNAME, PASSWORD)
+    if USERNAME:
+        sub.username_pw_set(USERNAME, PASSWORD or None)
 
     sub.on_connect = on_connect
     sub.connect(BROKER, PORT, keepalive=30)
@@ -278,15 +284,19 @@ def _handle_block(label: str, decoded: Any) -> None:
     if not rows:
         return
 
-    # Save to DB (preserve prior behavior)
-    if label == "BMS":
-        save_to_db_bms(cursor, conn, decoded)
-    elif label == "MC":
-        # decoded[1] is the PDO integer in the original translator output
-        pdo = decoded[1] if isinstance(decoded, list) and len(decoded) > 1 else None
-        save_to_db_mc(cursor, conn, decoded, pdo)
-    elif label == "VCU":
-        save_to_db_vcu(cursor, conn, decoded)
+    # Save to DB (preserve prior behavior) when enabled
+    if cursor and conn:
+        try:
+            if label == "BMS":
+                save_to_db_bms(cursor, conn, decoded)
+            elif label == "MC":
+                # decoded[1] is the PDO integer in the original translator output
+                pdo = decoded[1] if isinstance(decoded, list) and len(decoded) > 1 else None
+                save_to_db_mc(cursor, conn, decoded, pdo)
+            elif label == "VCU":
+                save_to_db_vcu(cursor, conn, decoded)
+        except Exception as e:
+            log(f"[DB] write failed ({label}): {e}")
 
     # Publish each numeric row to UI (also cached by cache_data from DB layer)
     for r in rows:
@@ -332,13 +342,21 @@ def subscribe(sub: mqtt_client.Client) -> None:
 def start_mqtt_subscriber() -> None:
     global cursor, conn, redis_client
 
-    # DB init
-    cursor, conn = start_postgresql()
-    setup_db(cursor, conn)
-    cursor, conn = connect_to_db()
-    create_mc_table(cursor, conn)
-    create_bms_table(cursor, conn)
-    create_vcu_table(cursor, conn)
+    if DB_ENABLED:
+        try:
+            cursor, conn = start_postgresql()
+            setup_db(cursor, conn)
+            cursor, conn = connect_to_db()
+            create_mc_table(cursor, conn)
+            create_bms_table(cursor, conn)
+            create_vcu_table(cursor, conn)
+            log("[DB] connected and ready")
+        except Exception as e:
+            log(f"[DB] disabled (connection failed: {e})")
+            cursor = None
+            conn = None
+    else:
+        log("[DB] disabled via WESMO_ENABLE_DB=0")
 
     # Optional Redis
     redis_client = start_redis()

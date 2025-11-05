@@ -17,7 +17,51 @@ export type SocketLike = {
 };
 
 const TOPIC = "wesmo/telemetry/#";
-const WS_URL = (process.env.REACT_APP_MQTT_URL as string) || "ws://localhost:9001";
+const DEFAULT_WS_URL = "ws://localhost:9001";
+
+function resolveWsUrl(): string {
+  const envUrl = process.env.REACT_APP_MQTT_URL;
+  if (envUrl && envUrl.trim().length > 0) {
+    return envUrl;
+  }
+
+  if (typeof window === "undefined") {
+    return DEFAULT_WS_URL;
+  }
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+
+    const direct = params.get("mqtt");
+    if (direct && direct.trim().length > 0) {
+      return direct;
+    }
+
+    const scheme =
+      params.get("mqttScheme") || (window.location.protocol === "https:" ? "wss" : "ws");
+    const host = params.get("mqttHost") || window.location.hostname || "localhost";
+    const portParam = params.get("mqttPort");
+    const port =
+      portParam != null
+        ? portParam
+        : host === "localhost" || host === "127.0.0.1"
+        ? "9001"
+        : "";
+    const pathParam = params.get("mqttPath");
+    const path = pathParam ? (pathParam.startsWith("/") ? pathParam : `/${pathParam}`) : "";
+
+    return `${scheme}://${host}${port ? `:${port}` : ""}${path}`;
+  } catch (err) {
+    console.warn("[MQTT] failed to resolve broker url, falling back to default", err);
+    return DEFAULT_WS_URL;
+  }
+}
+
+const WS_URL = resolveWsUrl();
+
+if (typeof window !== "undefined") {
+  console.info(`[MQTT] connecting to ${WS_URL}`);
+}
 
 /** Robust payload -> object parser (handles string, Uint8Array, Buffer-like, etc.) */
 function parsePayload(payload: unknown): any | null {

@@ -267,13 +267,32 @@ def connect_subscriber() -> mqtt_client.Client:
     if USERNAME:
         sub.username_pw_set(USERNAME, PASSWORD or None)
 
+    # Faster automatic reconnects
+    try:
+        sub.reconnect_delay_set(min_delay=1, max_delay=10)
+    except Exception:
+        pass
+
     def on_connect(c: mqtt_client.Client, u: Any, flags: Dict[str, Any], rc: int, properties: Any = None) -> None:
         if rc == 0:
             log(f"[MQTT] connected to {BROKER}:{PORT}")
+            # (Re)subscribe here so we recover after any reconnect
+            try:
+                c.subscribe(RAW_TOPIC, qos=0)
+                log(f"[SUB] (re)subscribed to '{RAW_TOPIC}'")
+            except Exception as e:
+                log(f"[SUB] resubscribe failed: {e}")
+            # re-arm the watchdog on connect if you use it
+            if TIMEOUT_SEC > 0:
+                reset_timeout()
         else:
             log(f"[MQTT] failed rc={rc}")
 
+    def on_disconnect(c: mqtt_client.Client, u: Any, rc: int, properties: Any = None) -> None:
+        log(f"[MQTT] disconnected rc={rc}")
+
     sub.on_connect = on_connect
+    sub.on_disconnect = on_disconnect
     sub.connect(BROKER, PORT, keepalive=30)
     return sub
 

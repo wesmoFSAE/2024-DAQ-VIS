@@ -13,11 +13,48 @@ const TelemetryCtx = createContext<TelemetryCtxType>({ connected: false, last: {
 const MAX_POINTS = 600;
 const TOPICS = ["wesmo/telemetry", "wesmo/telemetry/#"];
 
+// ✅ keep ALL keys here in lowercase
 const ALIASES: Record<string, string> = {
-  "Break Pressure Front": "Brake Pressure Front",
-  "Break Pressure Rear": "Brake Pressure Rear",
+  // typos / formatting
+  "break pressure front": "Brake Pressure Front",
+  "break pressure rear":  "Brake Pressure Rear",
+
+  // battery & power
+  "battery voltage": "DC Voltage",
+  "pack voltage":    "DC Voltage",
+  "dc bus voltage":  "DC Voltage",
+  "battery current": "Battery Current",
+  "pack current":    "Battery Current",
+  "dc current":      "Battery Current",
+
+  // DCL variants → one canonical key
+  "battery dcl":              "DCL",
+  "dcl":                      "DCL",
+  "dcl (limit)":              "DCL",
+  "discharge current limit":  "DCL",
+
+  // temps
+  "controller temp":         "Inverter Temp",
+  "controller temperature":  "Inverter Temp",
+
+  // wheel speeds
+  "wheel speed fr":           "Wheel Speed FR",
+  "wheel speed fl":           "Wheel Speed FL",
+  "wheel speed rr":           "Wheel Speed RR",
+  "wheel speed rl":           "Wheel Speed RL",
+  "front right wheel speed":  "Wheel Speed FR",
+  "front left wheel speed":   "Wheel Speed FL",
+  "rear right wheel speed":   "Wheel Speed RR",
+  "rear left wheel speed":    "Wheel Speed RL",
 };
-const norm = (n: string) => ALIASES[n] ?? n;
+
+// Case/whitespace-insensitive normalizer
+const norm = (n: string) => {
+  const key = (n ?? "").trim();
+  const low = key.toLowerCase();
+  return ALIASES[low] ?? key;
+};
+
 
 // Coerce PowerShell-style pseudo JSON to valid JSON if needed
 function toStrictJson(raw: string): string {

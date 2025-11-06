@@ -93,7 +93,7 @@ REDIS_ENABLED: bool = _env_bool("WESMO_ENABLE_REDIS", False)
 DB_ENABLED: bool    = _env_bool("WESMO_ENABLE_DB", True)
 
 # Watchdog for incoming frames (seconds)
-TIMEOUT_SEC: int = _env_int("WESMO_TIMEOUT_SEC", 30)
+TIMEOUT_SEC: int = _env_int("WESMO_TIMEOUT_SEC", 0)
 
 # =============================================================================
 # Globals
@@ -121,7 +121,7 @@ _dash_pub: Optional[mqtt_client.Client] = None
 # Watchdog
 timeout_timer: Optional[threading.Timer] = None
 timed_out = False
-
+nmt_operational: bool = True
 # Names the UI tiles expect (normalize to these)
 UI_NAME_MAP = {
     "battery voltage": "DC Voltage",
@@ -279,6 +279,8 @@ def connect_subscriber() -> mqtt_client.Client:
 
 def reset_timeout() -> None:
     global timeout_timer, timed_out
+    if TIMEOUT_SEC <= 0:
+        return
     if timeout_timer:
         timeout_timer.cancel()
     timeout_timer = threading.Timer(float(TIMEOUT_SEC), _on_timeout)
@@ -290,8 +292,19 @@ def reset_timeout() -> None:
 
 def _on_timeout() -> None:
     global timed_out
+    if TIMEOUT_SEC <= 0:
+       return
+    if not nmt_operational:
+       # Suppress during non-operational state
+       log("[WATCHDOG] idle, NMT not operational – ignored")
+       return
     timed_out = True
-    log("[WATCHDOG] timeout (no raw frames)")
+    log(f"[WATCHDOG] timeout (no raw frames for {TIMEOUT_SEC}s)")
+    # Optional: mark bridge idle in UI
+    try:
+       publish_for_ui("Bridge Idle", 1, "", source="BRIDGE")
+    except Exception:
+      pass
     if redis_client:
         try:
             redis_client.flushdb()
@@ -312,6 +325,20 @@ def _handle_block(label: str, decoded: Any) -> None:
     rows = _iter_rows(decoded)
     if not rows:
         return
+    ...
+    # Publish each numeric row to UI
+    for r in rows:
+        name = r.get("name")
+        value = r.get("value")
+        unit = r.get("unit", "")
+       # Track VCU NMT state (value 0/1)
+        if label == "VCU" and isinstance(name, str) and name.strip().lower() == "nmt is operational":
+           try:
+               globals()["nmt_operational"] = bool(value)
+           except Exception:
+               pass
+        if name and isinstance(value, (int, float)):
+            publish_for_ui(str(name), value, unit, source=label)
 
     # DB persists (optional)
     if DB_ENABLED and cursor and conn:
@@ -368,6 +395,41 @@ def subscribe(sub: mqtt_client.Client) -> None:
 
 def start_mqtt_subscriber() -> None:
     global cursor, conn, redis_client
+
+    # --- DB (optional) ---
+    if DB_ENABLED:
+        try:
+            cursor, conn = start_postgresql()
+            setup_db(cursor, conn)
+            cursor, conn = connect_to_db()
+            create_mc_table(cursor, conn)
+            create_bms_table(cursor, conn)
+            create_vcu_table(cursor, conn)
+            log("[DB] connected and ready")
+        except Exception as e:
+            log(f"[DB] disabled (connection failed: {e})")
+            cursor = None
+            conn = None
+    else:
+        log("[DB] disabled via WESMO_ENABLE_DB=0")
+
+    # --- Redis (optional) ---
+    redis_client = start_redis()
+
+    # --- MQTT publisher for the UI topic (wesmo/telemetry) ---
+    start_dash_publisher()
+
+    # --- Raw subscriber for simulator frames (/wesmo-data) ---
+    if TIMEOUT_SEC > 0:
+        reset_timeout()
+        log(f"[WATCHDOG] enabled ({TIMEOUT_SEC}s)")
+    else:
+        log("[WATCHDOG] disabled (WESMO_TIMEOUT_SEC=0)")
+
+    sub = connect_subscriber()
+    subscribe(sub)
+    sub.loop_forever()
+
 
     # DB (optional)
     if DB_ENABLED:

@@ -1,7 +1,7 @@
-// src/lib/socket.ts
+
 // MQTT-backed "socket" adapter using the BROWSER bundle (mqtt@4).
 
-import mqtt from "mqtt/dist/mqtt.js"; // force browser build
+import mqtt from "mqtt"; // force browser build
 import type { IClientOptions, MqttClient } from "mqtt";
 
 type Handler = (...args: any[]) => void;

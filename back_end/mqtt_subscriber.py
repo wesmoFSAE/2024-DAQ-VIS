@@ -1,16 +1,13 @@
 """
 File: mqtt_subscriber.py
 Purpose:
-  - Subscribe to raw CAN-over-MQTT frames published on /wesmo-data (your simulator).
-  - Decode them (BMS / MC / VCU) with your translators.
-  - Save to Postgres.
-  - Publish single-row JSON messages to 'wesmo/telemetry' for the React dashboard.
+  - Subscribe to raw CAN-over-MQTT frames on /wesmo-data (simulator).
+  - Decode (BMS/MC/VCU) using translators.
+  - Save to Postgres (optional, enabled by default).
+  - Publish flat JSON rows to 'wesmo/telemetry' for the React dashboard.
 
-Notes:
-  - Works even if Redis is not running.
-  - No HTTP calls are required to run.
-  - Payload shape matches your working PowerShell injector:
-      {"ts": 1711111111111, "source": "CAN", "name": "...", "value": 123.4, "unit": "degC"}
+UI payload shape:
+  {"ts": 1711111111111, "source": "CAN|BMS|MC|VCU|TEST", "name": "...", "value": 123.4, "unit": "degC"}
 """
 
 from __future__ import annotations
@@ -22,12 +19,12 @@ import pickle
 import random
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Iterable
 
-import paho.mqtt.client as mqtt_client
+import paho.mqtt.client as mqtt_client  # paho-mqtt >= 2.0
 
-# Optional dependencies (safe if missing/off)
-try:
+# ---- Optional Redis ----
+try:  # safe if not installed
     import redis  # type: ignore
 except Exception:  # pragma: no cover
     redis = None  # type: ignore
@@ -50,30 +47,53 @@ from database import (
 )
 
 # =============================================================================
-# Config (env overridable so the simulator + dashboard can share settings)
+# Env helpers (return concrete types to keep Pylance happy)
 # =============================================================================
 
-def _env(name: str, default: Optional[str] = None) -> Optional[str]:
-    value = os.getenv(name)
-    if value is None or value.strip() == "":
+def _env_opt(name: str) -> Optional[str]:
+    """Return env var or None if unset/blank."""
+    v = os.getenv(name)
+    if v is None:
+        return None
+    v = v.strip()
+    return v if v else None
+
+def _env_str(name: str, default: str) -> str:
+    return _env_opt(name) or default
+
+def _env_int(name: str, default: int) -> int:
+    v = _env_opt(name)
+    if v is None:
         return default
-    return value
+    try:
+        return int(v)
+    except Exception:
+        return default
 
+def _env_bool(name: str, default: bool) -> bool:
+    v = _env_opt(name)
+    if v is None:
+        return default
+    return v.lower() in {"1", "true", "yes", "y", "on"}
 
-BROKER = _env("WESMO_MQTT_BROKER", "localhost")
-PORT = int(_env("WESMO_MQTT_PORT", "1883"))
+# =============================================================================
+# Config (overridable by env)
+# =============================================================================
 
-RAW_TOPIC = _env("WESMO_RAW_TOPIC", "/wesmo-data")  # simulator publishes here
-UI_TOPIC = _env("WESMO_UI_TOPIC", "wesmo/telemetry")  # dashboard listens here
+BROKER: str = _env_str("WESMO_MQTT_BROKER", "localhost")
+PORT: int = _env_int("WESMO_MQTT_PORT", 1883)
 
-USERNAME = _env("WESMO_MQTT_USERNAME")
-PASSWORD = _env("WESMO_MQTT_PASSWORD")
+RAW_TOPIC: str = _env_str("WESMO_RAW_TOPIC", "/wesmo-data")      # simulator publishes here (leading /)
+UI_TOPIC: str  = _env_str("WESMO_UI_TOPIC", "wesmo/telemetry")   # dashboard listens here (no /)
 
-REDIS_ENABLED = _env("WESMO_ENABLE_REDIS", "0").lower() in {"1", "true", "yes", "on"}
-DB_ENABLED = _env("WESMO_ENABLE_DB", "1").lower() not in {"0", "false", "no", "off"}
+USERNAME: Optional[str] = _env_opt("WESMO_MQTT_USERNAME")
+PASSWORD: Optional[str] = _env_opt("WESMO_MQTT_PASSWORD")
+
+REDIS_ENABLED: bool = _env_bool("WESMO_ENABLE_REDIS", False)
+DB_ENABLED: bool    = _env_bool("WESMO_ENABLE_DB", True)
 
 # Watchdog for incoming frames (seconds)
-TIMEOUT_SEC = int(_env("WESMO_TIMEOUT_SEC", "30"))
+TIMEOUT_SEC: int = _env_int("WESMO_TIMEOUT_SEC", 30)
 
 # =============================================================================
 # Globals
@@ -87,9 +107,9 @@ mc_translator = MCTranslator()
 bms_translator = BMSTranslator()
 vcu_translator = VCUTranslator()
 
-# DB globals
-cursor = None
-conn = None
+# DB globals (loose typed to avoid stubs)
+cursor: Any = None
+conn: Any = None
 
 # Redis (optional)
 redis_client: Optional[Any] = None
@@ -102,6 +122,19 @@ _dash_pub: Optional[mqtt_client.Client] = None
 timeout_timer: Optional[threading.Timer] = None
 timed_out = False
 
+# Names the UI tiles expect (normalize to these)
+UI_NAME_MAP = {
+    "battery voltage": "DC Voltage",
+    "battery state of charge": "SoC",
+    "soc": "SoC",
+    "motor speed": "Motor Speed",
+    "motor rpm": "Motor Speed",
+    "controller temp": "Motor Temp",
+    "controller temperature": "Motor Temp",
+    "motor temperature": "Motor Temp",
+    # optional: if you want pack temp to drive the Motor Temp tile when motor temp is absent:
+    "battery temperature": "Motor Temp",
+}
 
 # =============================================================================
 # Utilities
@@ -111,10 +144,8 @@ def log(msg: str) -> None:
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] {msg}")
 
-
 def now_ms() -> int:
     return int(time.time() * 1000)
-
 
 # =============================================================================
 # Redis (optional)
@@ -132,7 +163,6 @@ def start_redis() -> Optional[Any]:
         log(f"[REDIS] not available ({e}). Continuing without Redis.")
         return None
 
-
 # =============================================================================
 # UI Publisher
 # =============================================================================
@@ -149,7 +179,8 @@ def start_dash_publisher() -> None:
     if USERNAME:
         pub.username_pw_set(USERNAME, PASSWORD or None)
 
-    def on_connect(c, u, f, rc):
+    # paho-mqtt v5 callback signature (properties added)
+    def on_connect(c: mqtt_client.Client, u: Any, flags: Dict[str, Any], rc: int, properties: Any = None) -> None:
         log(f"[DASH] connected rc={rc} as {dash_pub_id}")
 
     pub.on_connect = on_connect
@@ -158,42 +189,45 @@ def start_dash_publisher() -> None:
     _dash_pub = pub
     log(f"[DASH] publisher started -> topic '{UI_TOPIC}'")
 
+def _normalize_name(name: str) -> str:
+    key = name.strip()
+    mapped = UI_NAME_MAP.get(key.lower(), key)
+    return mapped
 
-def publish_for_ui(name: str, value: Any, unit: str = "", source: str = "CAN") -> None:
-    """Always push a single-row message for the React dashboard."""
+def _normalize_unit(unit: Any) -> str:
+    unit_map = {"c": "degC", "C": "degC", "°C": "degC", "degc": "degC"}
+    return unit_map.get(str(unit), str(unit) if unit is not None else "")
+
+def publish_for_ui(name: str, value: Any, unit: Any = "", source: str = "CAN") -> None:
+    """Publish a single UI row (safe if publisher not started)."""
     if _dash_pub is None or not name:
         return
-    try:
-        v = float(value) if isinstance(value, (int, float)) else value
-        payload = {
-            "ts": now_ms(),
-            "source": source,
-            "name": name,
-            "value": v,
-            "unit": unit or "",
-        }
-        j = json.dumps(payload, separators=(",", ":"))
-        _dash_pub.publish(UI_TOPIC, j, qos=0, retain=False)
-        # Verbose logging to see live traffic
-        log(f"[PUB] {name} = {v} {unit}")
-    except Exception as e:
-        log(f"[PUB] error for {name}: {e}")
 
+    payload = {
+        "ts": now_ms(),
+        "source": source,
+        "name": _normalize_name(str(name)),
+        "value": float(value) if isinstance(value, (int, float)) else value,
+        "unit": _normalize_unit(unit),
+    }
+    j = json.dumps(payload, separators=(",", ":"))
+    _dash_pub.publish(UI_TOPIC, j, qos=0, retain=True)
+    log(f"[PUB] {payload['name']} = {payload['value']} {payload['unit']}")
 
 # =============================================================================
 # Cache + Publish (safe)
 # =============================================================================
 
-def cache_data(time_parts, value) -> None:
+def cache_data(time_parts: Iterable[str], value: Dict[str, Any]) -> None:
     """
     Safe cache + publish:
-    - **Always** publish to the dashboard so UI updates even when Redis is down.
-    - Optionally cache the latest value in Redis when enabled.
+      - Always publish to the dashboard so UI updates even if Redis is down.
+      - Optionally cache the latest value in Redis when enabled.
     """
-    # 1) Publish to UI (first, so failures don't block UI updates)
+    # 1) Publish to UI first (don't let cache failures block UI)
     try:
         publish_for_ui(
-            value.get("name", ""),
+            str(value.get("name", "")),
             value.get("value", 0),
             value.get("unit", ""),
             source="CAN",
@@ -207,31 +241,24 @@ def cache_data(time_parts, value) -> None:
 
     global _redis_warned
     try:
-        redis_key = value["name"]
+        redis_key = str(value.get("name", ""))
         redis_val = {
-            "time": f"{time_parts[1]} {time_parts[2]}",
-            "name": value["name"],
-            "value": value["value"],
+            "time": " ".join(list(time_parts)[1:3]) if time_parts else "",
+            "name": value.get("name", ""),
+            "value": value.get("value", 0),
             "unit": value.get("unit", ""),
         }
         redis_client.set(redis_key, pickle.dumps(redis_val))
-    except Exception as e:  # log once
+    except Exception as e:
         if not _redis_warned:
             log(f"[REDIS] cache disabled ({e})")
             _redis_warned = True
-
 
 # =============================================================================
 # Subscriber
 # =============================================================================
 
 def connect_subscriber() -> mqtt_client.Client:
-    def on_connect(c, u, f, rc):
-        if rc == 0:
-            log(f"[MQTT] connected to {BROKER}:{PORT}")
-        else:
-            log(f"[MQTT] failed rc={rc}")
-
     sub = mqtt_client.Client(
         client_id=client_id,
         protocol=mqtt_client.MQTTv311,
@@ -240,22 +267,26 @@ def connect_subscriber() -> mqtt_client.Client:
     if USERNAME:
         sub.username_pw_set(USERNAME, PASSWORD or None)
 
+    def on_connect(c: mqtt_client.Client, u: Any, flags: Dict[str, Any], rc: int, properties: Any = None) -> None:
+        if rc == 0:
+            log(f"[MQTT] connected to {BROKER}:{PORT}")
+        else:
+            log(f"[MQTT] failed rc={rc}")
+
     sub.on_connect = on_connect
     sub.connect(BROKER, PORT, keepalive=30)
     return sub
-
 
 def reset_timeout() -> None:
     global timeout_timer, timed_out
     if timeout_timer:
         timeout_timer.cancel()
-    timeout_timer = threading.Timer(TIMEOUT_SEC, _on_timeout)
+    timeout_timer = threading.Timer(float(TIMEOUT_SEC), _on_timeout)
     timeout_timer.daemon = True
     timeout_timer.start()
     if timed_out:
         timed_out = False
         log("[WATCHDOG] activity resumed")
-
 
 def _on_timeout() -> None:
     global timed_out
@@ -268,7 +299,6 @@ def _on_timeout() -> None:
         except Exception as e:
             log(f"[WATCHDOG] redis flush error: {e}")
 
-
 def _iter_rows(decoded: Any) -> List[Dict[str, Any]]:
     if not decoded:
         return []
@@ -278,14 +308,13 @@ def _iter_rows(decoded: Any) -> List[Dict[str, Any]]:
         return [decoded]
     return []
 
-
 def _handle_block(label: str, decoded: Any) -> None:
     rows = _iter_rows(decoded)
     if not rows:
         return
 
-    # Save to DB (preserve prior behavior) when enabled
-    if cursor and conn:
+    # DB persists (optional)
+    if DB_ENABLED and cursor and conn:
         try:
             if label == "BMS":
                 save_to_db_bms(cursor, conn, decoded)
@@ -298,17 +327,16 @@ def _handle_block(label: str, decoded: Any) -> None:
         except Exception as e:
             log(f"[DB] write failed ({label}): {e}")
 
-    # Publish each numeric row to UI (also cached by cache_data from DB layer)
+    # Publish each numeric row to UI
     for r in rows:
         name = r.get("name")
         value = r.get("value")
         unit = r.get("unit", "")
         if name and isinstance(value, (int, float)):
-            publish_for_ui(name, value, unit, source=label)
-
+            publish_for_ui(str(name), value, unit, source=label)
 
 def subscribe(sub: mqtt_client.Client) -> None:
-    def on_message(client, userdata, msg):
+    def on_message(client: mqtt_client.Client, userdata: Any, msg: Any) -> None:
         reset_timeout()
         try:
             raw_text = msg.payload.decode("utf-8", errors="ignore")
@@ -334,7 +362,6 @@ def subscribe(sub: mqtt_client.Client) -> None:
     sub.on_message = on_message
     log(f"[SUB] subscribed to '{RAW_TOPIC}'")
 
-
 # =============================================================================
 # Entrypoint
 # =============================================================================
@@ -342,6 +369,7 @@ def subscribe(sub: mqtt_client.Client) -> None:
 def start_mqtt_subscriber() -> None:
     global cursor, conn, redis_client
 
+    # DB (optional)
     if DB_ENABLED:
         try:
             cursor, conn = start_postgresql()
@@ -370,10 +398,8 @@ def start_mqtt_subscriber() -> None:
     subscribe(sub)
     sub.loop_forever()
 
-
 def main() -> None:
     start_mqtt_subscriber()
-
 
 if __name__ == "__main__":
     main()

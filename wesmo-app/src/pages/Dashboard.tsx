@@ -1,187 +1,95 @@
-// src/pages/Dashboard.tsx
 import React from "react";
 import {
   TelemetryProvider,
   useTelemetryConnection,
   useMetric,
-  useTelemetryState,
+  usePowerKW,
+  useHottestTemp,
+  useFaults,
+  useStatuses,
 } from "../components/dashboard/TelemetryProvider.tsx";
 
-/* ---------------- helpers (unchanged logic) ---------------- */
-function useValue(name: string) {
-  return useMetric(name).value;
-}
-function useUnit(name: string) {
-  return useMetric(name).unit;
-}
-function usePowerKW() {
-  const v = useValue("DC Voltage");       // V
-  const a = useValue("Battery Current");  // A
-  if (typeof v === "number" && typeof a === "number") return (v * a) / 1000; // kW
-  return undefined;
-}
-function useHottestTemp() {
-  const picks = [
-    { label: "Motor Temp", val: useValue("Motor Temp") },
-    { label: "Inverter Temp", val: useValue("Inverter Temp") },
-    { label: "Battery Temp", val: useValue("Battery Temp") },
-    { label: "Battery Temperature", val: useValue("Battery Temperature") },
-  ].filter(x => typeof x.val === "number") as { label: string; val: number }[];
-  if (picks.length === 0) return { label: undefined as string | undefined, val: undefined as number | undefined };
-  return picks.reduce((a, b) => (a.val >= b.val ? a : b));
+// Simple UI-side thresholds (tweak to taste)
+const UI_THRESHOLDS = {
+  SoC: { warnLow: 20, faultLow: 10 },            // %  (orange <20, red <10)
+  PackPowerKW: { warnHigh: 70, faultHigh: 80 },  // kW (orange >70, red >80)
+};
+
+/* ---------- Small UI primitives ---------- */
+type HealthDotProps = { state: "ok" | "warn" | "fault" | "neutral" };
+function HealthDot({ state }: HealthDotProps) {
+  return <span className={`health-dot ${state}`} aria-hidden />;
 }
 
-/* ---------------- aesthetic styles ---------------- */
-const Theme = () => (
-  <style>{`
-    :root{
-      --bg:#f7f8fc;
-      --card:#ffffff;
-      --ink:#0f1222;
-      --muted:#6b7280;
-      --ring:#e7eaf3;
-      --ring-strong:#d5daf0;
-      --accent1:#6E8BFF;
-      --accent2:#9AE6E8;
-      --shadow-sm:0 4px 12px rgba(17, 24, 39, .06);
-      --shadow-md:0 10px 30px rgba(17, 24, 39, .10);
-      --shadow-lg:0 18px 40px rgba(17, 24, 39, .15);
-    }
-
-    .wrap{
-      min-height:100vh;
-      padding:24px;
-      background: radial-gradient(1200px 600px at 20% -10%, #ffffff 0%, transparent 60%) , var(--bg);
-      color:var(--ink);
-    }
-
-    .title{
-      margin: 2px 0 12px;
-      font-weight: 800;
-      letter-spacing:.2px;
-      display:flex; align-items:center; gap:12px;
-    }
-
-    .badgeRow{
-      display:flex; gap:10px; align-items:center;
-      border:1px solid var(--ring); border-radius:12px; padding:10px 12px;
-      background:linear-gradient(180deg,#fff, #fafbff);
-      box-shadow:var(--shadow-sm);
-      margin-bottom:16px;
-    }
-    .chip{
-      display:flex; align-items:center; gap:8px;
-      font-size:12px; padding:6px 10px; border-radius:999px;
-      border:1px solid var(--ring);
-      background:#fff;
-    }
-    .dot{ width:10px; height:10px; border-radius:999px; display:inline-block; }
-    .ok{ background:#22c55e; } .bad{ background:#ef4444; } .unk{ background:#9ca3af; }
-
-    h3.section{
-      margin: 18px 0 10px;
-      font-weight: 800;
-      letter-spacing:.2px;
-      background: linear-gradient(90deg, var(--ink), #3a3d4a);
-      -webkit-background-clip: text; background-clip: text; color: transparent;
-    }
-
-    .grid{
-      display:grid;
-      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-      gap:14px;
-      margin-bottom:4px;
-    }
-
-    .card{
-      position:relative;
-      background:var(--card);
-      border:1px solid var(--ring);
-      border-radius:16px;
-      padding:16px 18px;
-      overflow:hidden;
-      box-shadow:var(--shadow-sm);
-      transition: transform .22s cubic-bezier(.22,.61,.36,1), box-shadow .22s, border-color .22s;
-      will-change: transform, box-shadow;
-      isolation:isolate;
-    }
-    /* glossy hover line */
-    .card::after{
-      content:"";
-      position:absolute; inset:-1px;
-      border-radius:16px;
-      background:linear-gradient(90deg, rgba(110,139,255,.0), rgba(110,139,255,.12), rgba(154,230,232,.0));
-      opacity:0; transition:opacity .25s;
-      pointer-events:none;
-      z-index:0;
-    }
-    .card:hover{
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-md);
-      border-color: var(--ring-strong);
-    }
-    .card:hover::after{ opacity:1; }
-
-    .label{ font-size:12px; color:var(--muted); margin-bottom:8px; position:relative; z-index:1; }
-    .value{
-      font-size:34px; font-weight:900; letter-spacing:.2px; line-height:1.15;
-      position:relative; z-index:1;
-      display:flex; align-items:baseline; gap:8px;
-    }
-    .unit{ font-size:18px; color:var(--muted); font-weight:700; }
-
-    .livePill{
-      margin-left:auto; font-size:12px; color:var(--muted);
-      border:1px dashed var(--ring); padding:6px 10px; border-radius:8px;
-      background:#fff; box-shadow:var(--shadow-sm);
-    }
-
-    @media (hover:hover){
-      .card:active{ transform: translateY(0); box-shadow:var(--shadow-sm); }
-    }
-  `}</style>
-);
-
-/* ---------------- UI atoms ---------------- */
-function StatusDot({ ok }: { ok: boolean | undefined }) {
-  const cls = ok === undefined ? "dot unk" : ok ? "dot ok" : "dot bad";
-  return <span className={cls} />;
-}
-
-function Card({ label, value, unit }: { label: string; value?: number; unit?: string }) {
-  const formatted =
-    typeof value === "number"
-      ? value.toFixed((Math.abs(value) >= 100 || Number.isInteger(value)) ? 0 : 1)
-      : "—";
+function Card({
+  label,
+  value,
+  unit,
+  status = "neutral",
+}: {
+  label: string;
+  value?: number;
+  unit?: string;
+  status?: "ok" | "warn" | "fault" | "neutral";
+}) {
+  const display =
+    typeof value === "number" && Number.isFinite(value) ? value.toFixed(1) : "—";
   return (
     <div className="card">
-      <div className="label">{label}</div>
-      <div className="value">
-        {formatted} <span className="unit">{unit ?? ""}</span>
+      <div className="card-label">
+        <HealthDot state={status} /> {label}
+      </div>
+      <div className="card-value">
+        {display} {unit ?? ""}
       </div>
     </div>
   );
 }
 
-/* ---------------- rows ---------------- */
-function TopStatus() {
-  const connected = useTelemetryConnection();
-  const state = useTelemetryState();
-  const hasSoC = state.last["SoC"] !== undefined;
-  const hasBMS = state.last["DC Voltage"] !== undefined;
-  const hasMC  = state.last["Motor Speed"] !== undefined;
+function AlertsPanel() {
+  const faults = useFaults();
+  const recent = [...faults].slice(-8).reverse();
+
+  const dot = (s: string) =>
+    s.startsWith("FAULT") ? "dot dot-fault" :
+    s.startsWith("WARN")  ? "dot dot-warn"  :
+    "dot dot-ok";
 
   return (
-    <div className="badgeRow">
-      <div className="chip"><StatusDot ok={connected} /> MQTT</div>
-      <div className="chip"><StatusDot ok={hasBMS} /> BMS</div>
-      <div className="chip"><StatusDot ok={hasMC} /> MC</div>
-      <div className="chip"><StatusDot ok={hasSoC} /> SoC</div>
-      <div className="livePill">live: wesmo/telemetry/#</div>
+    <div className="panel">
+      <div className="panel-title">Alerts</div>
+      {recent.length === 0 ? (
+        <div className="panel-empty">No alerts.</div>
+      ) : (
+        recent.map((e, i) => (
+          <div className="alert-row" key={i}>
+            <span className={dot(e.status)} />
+            <span className="alert-time">{new Date(e.ts).toLocaleTimeString()}</span>
+            <strong className="alert-name">{e.name}</strong>
+            <span className="alert-msg">{e.message ?? e.status} {Number.isFinite(e.value) ? `(val ${e.value})` : ""}</span>
+          </div>
+        ))
+      )}
     </div>
   );
 }
 
+/* ---------- Health resolution helpers ---------- */
+function useHealth(keys: string[] | undefined) {
+  const statusMap = useStatuses();
+  if (!keys || keys.length === 0) return "neutral" as const;
+
+  // worst-of aggregation across related metrics
+  let state: "ok" | "warn" | "fault" = "ok";
+  for (const k of keys) {
+    const s = statusMap[k];
+    if (s === "FAULT") return "fault";
+    if (s === "WARN") state = "warn";
+  }
+  return state;
+}
+
+/* ---------- Section rows ---------- */
 function RowPowertrain() {
   const soc = useMetric("SoC");
   const v = useMetric("DC Voltage");
@@ -190,16 +98,33 @@ function RowPowertrain() {
   const pkw = usePowerKW();
   const hottest = useHottestTemp();
 
+  const stVoltage = useHealth(["Battery Voltage"]);
+  const stCurrent = useHealth(["Battery Current"]);
+  const stTemp    = useHealth(["Motor Temperature"]);
+
+  // NEW: SoC + Pack Power lights
+  const stSoC =
+    Number.isFinite(soc.value)
+      ? (soc.value! < UI_THRESHOLDS.SoC.faultLow ? "fault"
+         : soc.value! < UI_THRESHOLDS.SoC.warnLow ? "warn" : "ok")
+      : "neutral";
+
+  const stPack =
+    Number.isFinite(pkw)
+      ? (pkw! > UI_THRESHOLDS.PackPowerKW.faultHigh ? "fault"
+         : pkw! > UI_THRESHOLDS.PackPowerKW.warnHigh ? "warn" : "ok")
+      : "neutral";
+
   return (
     <>
       <h3 className="section">Powertrain & Energy</h3>
       <div className="grid">
-        <Card label="SoC" value={soc.value} unit={soc.unit ?? "%"} />
-        <Card label="Pack Power" value={pkw} unit="kW" />
-        <Card label="DC Voltage" value={v.value} unit={v.unit ?? "V"} />
-        <Card label="Battery Current" value={a.value} unit={a.unit ?? "A"} />
-        <Card label="Hottest Temp" value={hottest.val} unit="°C" />
-        <Card label="DCL (limit)" value={dcl.value} unit={dcl.unit ?? "A"} />
+        <Card label="SoC"        value={soc.value} unit={soc.unit ?? "%"}  status={stSoC} />
+        <Card label="Pack Power" value={pkw}       unit="kW"               status={stPack} />
+        <Card label="DC Voltage" value={v.value}   unit={v.unit ?? "V"}    status={stVoltage} />
+        <Card label="Battery Current" value={a.value} unit={a.unit ?? "A"} status={stCurrent} />
+        <Card label={hottest.name ?? "Motor Temp"}  value={hottest.val} unit="°C" status={stTemp} />
+        <Card label="DCL (limit)" value={dcl.value} unit={dcl.unit ?? "A"} status="neutral" />
       </div>
     </>
   );
@@ -207,41 +132,117 @@ function RowPowertrain() {
 
 function RowDynamics() {
   const rpm = useMetric("Motor Speed");
-  const fr = useMetric("Wheel Speed FR");
-  const fl = useMetric("Wheel Speed FL");
-  const rr = useMetric("Wheel Speed RR");
-  const rl = useMetric("Wheel Speed RL");
+  const fr  = useMetric("Wheel Speed FR");
+  const fl  = useMetric("Wheel Speed FL");
+  const rr  = useMetric("Wheel Speed RR");
+  const rl  = useMetric("Wheel Speed RL");
   const bpf = useMetric("Brake Pressure Front");
   const bpr = useMetric("Brake Pressure Rear");
+
+  const stRPM  = useHealth(["Motor Speed"]);
+  const stBPF  = useHealth(["Brake Pressure Front"]);
+  const stBPR  = useHealth(["Brake Pressure Rear"]);
+  const stFR   = useHealth(["Wheel Speed FR"]);
+  const stFL   = useHealth(["Wheel Speed FL"]);
+  const stRR   = useHealth(["Wheel Speed RR"]);
+  const stRL   = useHealth(["Wheel Speed RL"]);
 
   return (
     <>
       <h3 className="section">Dynamics</h3>
       <div className="grid">
-        <Card label="Motor Speed" value={rpm.value} unit={rpm.unit ?? "rpm"} />
-        <Card label="Brake Pressure Front" value={bpf.value} unit={bpf.unit ?? "bar"} />
-        <Card label="Brake Pressure Rear"  value={bpr.value} unit={bpr.unit ?? "bar"} />
-        <Card label="Wheel Speed FR" value={fr.value} unit={fr.unit ?? "km/h"} />
-        <Card label="Wheel Speed FL" value={fl.value} unit={fl.unit ?? "km/h"} />
-        <Card label="Wheel Speed RR" value={rr.value} unit={rr.unit ?? "km/h"} />
-        <Card label="Wheel Speed RL" value={rl.value} unit={rl.unit ?? "km/h"} />
+        <Card label="Motor Speed" value={rpm.value} unit={rpm.unit ?? "rpm"} status={stRPM} />
+        <Card label="Brake Pressure Front" value={bpf.value} unit={bpf.unit ?? "bar"} status={stBPF} />
+        <Card label="Brake Pressure Rear"  value={bpr.value} unit={bpr.unit ?? "bar"} status={stBPR} />
+        <Card label="Wheel Speed FR" value={fr.value} unit={fr.unit ?? "km/h"} status={stFR} />
+        <Card label="Wheel Speed FL" value={fl.value} unit={fl.unit ?? "km/h"} status={stFL} />
+        <Card label="Wheel Speed RR" value={rr.value} unit={rr.unit ?? "km/h"} status={stRR} />
+        <Card label="Wheel Speed RL" value={rl.value} unit={rl.unit ?? "km/h"} status={stRL} />
       </div>
     </>
   );
 }
 
-/* ---------------- page ---------------- */
+function RowStatuses() {
+  const nmt = useMetric("NMT is Operational");
+  const rtd = useMetric("RTD Running");
+  const err = useMetric("VCU Error Present");
+
+  return (
+    <>
+      <h3 className="section">Statuses</h3>
+      <div className="grid">
+        <Card label="NMT Operational" value={nmt.value} status="neutral" />
+        <Card label="RTD Running"    value={rtd.value} status="neutral" />
+        <Card label="VCU Error"      value={err.value} status="neutral" />
+      </div>
+    </>
+  );
+}
+
+/* ---------- Page ---------- */
 function DashboardInner() {
   const connected = useTelemetryConnection();
+
   return (
-    <div className="wrap">
-      <Theme />
-      <h2 className="title">
-        Pit Dashboard {connected ? "🟢 connected" : "🔴 disconnected"}
-      </h2>
-      <TopStatus />
+    <div className="dash-root">
+      <header className="dash-header">
+        <h2 className="dash-title">Live Telemetry</h2>
+        <span className={`status ${connected ? "ok" : "bad"}`}>
+          <span className="status-dot" />
+          {connected ? "connected" : "disconnected"}
+        </span>
+      </header>
+
+      <div className="top-row">
+        <AlertsPanel />
+      </div>
+
       <RowPowertrain />
       <RowDynamics />
+      <RowStatuses />
+
+      {/* Inline styles to keep this file self-contained */}
+      <style>{`
+        .dash-root { padding: 16px 20px 32px; background: #f6f7fb; min-height: calc(100vh - 64px); }
+        .dash-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+        .dash-title { margin:0; font-size:22px; font-weight:800; color:#0b1324; }
+        .status { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+        .status-dot { width:8px; height:8px; border-radius:50%; background:#bbb; }
+        .status.ok { background:#e7f7ef; color:#115e36; border:1px solid #bfead2; }
+        .status.ok .status-dot { background:#24c369; }
+        .status.bad { background:#feecec; color:#7b1919; border:1px solid #f6c8c8; }
+        .status.bad .status-dot { background:#e23939; }
+
+        .section { margin:18px 0 10px; font-size:14px; color:#61708b; letter-spacing:.6px; text-transform:uppercase; }
+        .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+        .top-row { margin: 8px 0 10px; }
+
+        .card { background:#fff; border:1px solid #e8eaf0; border-radius:14px; padding:16px; transition:transform .15s ease, box-shadow .15s ease; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.08); }
+        .card-label { font-size:12px; color:#7d889c; display:flex; align-items:center; gap:8px; }
+        .card-value { font-size:30px; font-weight:800; color:#0b1324; }
+
+        .panel { background:#fff; border:1px solid #e8eaf0; border-radius:14px; padding:12px 14px; }
+        .panel-title { font-weight:800; font-size:14px; color:#0b1324; margin-bottom:6px; }
+        .panel-empty { font-size:13px; color:#7d889c; }
+        .alert-row { display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:1px dashed rgba(0,0,0,.06); }
+        .alert-row:last-child { border-bottom:none; }
+        .alert-time { width:96px; font-size:12px; color:#7d889c; }
+        .alert-name { min-width:180px; color:#0b1324; }
+        .alert-msg { color:#3b465c; font-size:13px; }
+        .dot { display:inline-block; width:10px; height:10px; border-radius:999px; background:#bbb; }
+        .dot-warn { background:#f5b301; }
+        .dot-fault { background:#e23939; }
+        .dot-ok { background:#35c759; }
+
+        /* NEW: tiny health dots inside tiles */
+        .health-dot { display:inline-block; width:10px; height:10px; border-radius:999px; box-shadow: 0 0 0 1px rgba(0,0,0,.06) inset; }
+        .health-dot.ok { background:#35c759; }
+        .health-dot.warn { background:#f5b301; }
+        .health-dot.fault { background:#e23939; }
+        .health-dot.neutral { background:#c9ceda; }
+      `}</style>
     </div>
   );
 }

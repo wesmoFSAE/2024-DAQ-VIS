@@ -1,122 +1,93 @@
-// src/components/dashboard/TelemetryProvider.tsx
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import mqtt from "mqtt/dist/mqtt.js";
 import type { IClientOptions, MqttClient } from "mqtt";
 
+/* ========= Types ========= */
 type MetricRow = { ts: number; value: number };
 type SeriesMap = Record<string, MetricRow[]>;
 type LastMap = Record<string, { ts: number; value: number; unit?: string }>;
-type TelemetryCtxType = { connected: boolean; last: LastMap; series: SeriesMap; _ver: number };
 
-const TelemetryCtx = createContext<TelemetryCtxType>({ connected: false, last: {}, series: {}, _ver: 0 });
+export type FaultEvent = {
+  ts: number;
+  name: string;
+  status: "WARN_HIGH" | "FAULT_HIGH" | "FAULT_LOW" | "RESOLVED";
+  value: number;
+  source?: string;
+  message?: string;
+};
 
+type Health = "OK" | "WARN" | "FAULT";
+type StatusMap = Record<string, Health>;
+
+type TelemetryCtxType = {
+  connected: boolean;
+  last: LastMap;
+  series: SeriesMap;
+  faults: FaultEvent[];
+  status: StatusMap;            // <— NEW: live per-metric health
+  _ver: number;
+};
+
+const TelemetryCtx = createContext<TelemetryCtxType>({
+  connected: false, last: {}, series: {}, faults: [], status: {}, _ver: 0
+});
+
+/* ========= Config ========= */
 const MAX_POINTS = 600;
-const TOPICS = ["wesmo/telemetry", "wesmo/telemetry/#"];
+const TOPICS = ["wesmo/telemetry", "wesmo/telemetry/#", "wesmo/faults", "wesmo/faults/#"];
 
-// ✅ keep ALL keys here in lowercase
 const ALIASES: Record<string, string> = {
-  // typos / formatting
-  "break pressure front": "Brake Pressure Front",
-  "break pressure rear":  "Brake Pressure Rear",
+  // typos / variants
+  "Break Pressure Front": "Brake Pressure Front",
+  "Break Pressure Rear": "Brake Pressure Rear",
 
   // battery & power
-  "battery voltage": "DC Voltage",
-  "pack voltage":    "DC Voltage",
-  "dc bus voltage":  "DC Voltage",
+  "battery voltage": "Battery Voltage",
+  "pack voltage": "Battery Voltage",
+  "dc bus voltage": "Battery Voltage", // backend uses Battery Voltage thresholds for pack V
   "battery current": "Battery Current",
-  "pack current":    "Battery Current",
-  "dc current":      "Battery Current",
-
-  // DCL variants → one canonical key
-  "battery dcl":              "DCL",
-  "dcl":                      "DCL",
-  "dcl (limit)":              "DCL",
-  "discharge current limit":  "DCL",
+  "pack current": "Battery Current",
+  "dc current": "Battery Current",
+  "battery dcl": "DCL",
+  "dcl": "DCL",
 
   // temps
-  "controller temp":         "Inverter Temp",
-  "controller temperature":  "Inverter Temp",
-
-  // wheel speeds
-  "wheel speed fr":           "Wheel Speed FR",
-  "wheel speed fl":           "Wheel Speed FL",
-  "wheel speed rr":           "Wheel Speed RR",
-  "wheel speed rl":           "Wheel Speed RL",
-  "front right wheel speed":  "Wheel Speed FR",
-  "front left wheel speed":   "Wheel Speed FL",
-  "rear right wheel speed":   "Wheel Speed RR",
-  "rear left wheel speed":    "Wheel Speed RL",
+  "controller temp": "Inverter Temp",
+  "controller temperature": "Inverter Temp",
 };
+const norm = (n: string) => ALIASES[n] ?? n;
 
-// Case/whitespace-insensitive normalizer
-const norm = (n: string) => {
-  const key = (n ?? "").trim();
-  const low = key.toLowerCase();
-  return ALIASES[low] ?? key;
-};
-
-
-// Coerce PowerShell-style pseudo JSON to valid JSON if needed
-function toStrictJson(raw: string): string {
-  let t = raw.trim();
-
-  // 1) Quote keys:  {foo: ... , motor_speed: ...} -> {"foo": ... , "motor_speed": ...}
-  t = t.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":');
-
-  // 2) Quote *bareword* string values (letters/underscores/spaces). Do NOT touch numbers/booleans/null.
-  //    name:Motor Temp}   -> "name":"Motor Temp"}
-  //    source:TEST,       -> "source":"TEST",
-  //    unit:degC,         -> "unit":"degC",
-  t = t.replace(/:\s*([A-Za-z][A-Za-z0-9_ ]*)\s*(?=[,}])/g, (_m, s: string) => {
-    const word = s.trim();
-    // leave true/false/null alone (case-insensitive)
-    if (/^(true|false|null)$/i.test(word)) return ':' + word.toLowerCase();
-    return ':"' + word + '"';
-  });
-
-  return t;
-}
-
-
+/* ========= Tolerant parsing ========= */
 function parsePayload(buf: Uint8Array) {
   const txt = new TextDecoder().decode(buf);
 
-  // Try strict JSON first
+  // Strict JSON first
   try { return JSON.parse(txt); } catch {}
 
+  // Tolerant path: accept single quotes, unquoted keys, and bareword values
   try {
     let s = txt.trim();
-
-    // 1) normalize single -> double quotes
-    s = s.replace(/'/g, '"');
-
-    // 2) quote keys: { key: ... } or , key: ...
-    s = s.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9 _-]*)(\s*:)/g, '$1"$2"$3');
-
-    // 3) quote bare *string* values (including ones with spaces) up to , } or ]
-    //    leave numbers / booleans / null untouched
-    s = s.replace(/(:\s*)([^"{\[\d-][^,}\]]*)(\s*([}\],]))/g, (_m, p1, val, p3) => {
-      const t = val.trim();
-      const low = t.toLowerCase();
-      if (low === 'true' || low === 'false' || low === 'null') return p1 + low + p3;
-      if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(t)) return p1 + t + p3; // numeric
-      return p1 + '"' + t + '"' + p3; // quote strings like Motor Temp, DC Voltage, degC, rpm, V, %
-    });
-
+    s = s.replace(/'/g, '"'); // normalize quotes
+    s = s.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9 _-]*)(\s*:)/g, '$1"$2"$3'); // quote keys
+    s = s.replace(/(:\s*)([A-Za-z%][A-Za-z0-9%._-]*)(\s*([}\],]))/g, '$1"$2"$3'); // quote bare values
     return JSON.parse(s);
   } catch (e) {
-    console.warn('[WESMO MQTT] parse failed:', txt, e);
+    console.warn("[WESMO MQTT] parse failed:", txt, e);
     return null;
   }
 }
 
+/* ========= Provider ========= */
 export function TelemetryProvider({ children }: { children: React.ReactNode }) {
-  const url = process.env.REACT_APP_MQTT_URL || "ws://127.0.0.1:9001";
+  const url = (process.env.REACT_APP_MQTT_URL as string) || "ws://127.0.0.1:9001";
+
   const [connected, setConnected] = useState(false);
   const [tick, setTick] = useState(0);
 
-  const lastRef = useRef<LastMap>({});
+  const lastRef   = useRef<LastMap>({});
   const seriesRef = useRef<SeriesMap>({});
+  const faultsRef = useRef<FaultEvent[]>([]);
+  const statusRef = useRef<StatusMap>({});     // <— NEW
 
   useEffect(() => {
     const opts: IClientOptions = { path: "/mqtt", protocolVersion: 4 };
@@ -136,12 +107,36 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
 
     client.on("message", (_topic: string, payload: Uint8Array) => {
       const raw = new TextDecoder().decode(payload);
-      console.log("[WESMO MQTT] msg", raw);
 
-      // ✅ pass the bytes, not the decoded string
-      const obj = parsePayload(payload);
+      // Try JSON first so we catch fault events reliably
+      let obj: any = null;
+      try { obj = JSON.parse(raw); } catch {}
+      if (!obj) obj = parsePayload(payload);
       if (!obj) return;
 
+      // ---- Fault event path ----
+      if (obj && (obj.kind === "fault_event" || (obj.status && obj.name))) {
+        const ev: FaultEvent = {
+          ts: typeof obj.ts === "number" ? obj.ts : Date.now(),
+          name: String(obj.name),
+          status: String(obj.status) as FaultEvent["status"],
+          value: Number(obj.value ?? NaN),
+          source: obj.source,
+          message: obj.message,
+        };
+        faultsRef.current.push(ev);
+        if (faultsRef.current.length > 300) faultsRef.current.splice(0, faultsRef.current.length - 300);
+
+        // Update per-metric health map
+        const toHealth = (s: FaultEvent["status"]): Health =>
+          s === "RESOLVED" ? "OK" : (s.startsWith("WARN") ? "WARN" : "FAULT");
+        statusRef.current[ev.name] = toHealth(ev.status);
+
+        setTick((v) => v + 1);
+        return;
+      }
+
+      // ---- Numeric telemetry path ----
       const name = norm(obj?.name);
       const ts =
         typeof obj?.ts === "number" ? obj.ts :
@@ -156,8 +151,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
       arr.push({ ts, value });
       if (arr.length > MAX_POINTS) arr.splice(0, arr.length - MAX_POINTS);
 
-      console.log("[WESMO MQTT] update ->", name, value, unit);
-      setTick(v => v + 1);
+      setTick((v) => v + 1);
     });
 
     return () => {
@@ -176,14 +170,14 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   }, [url]);
 
   const ctx = useMemo<TelemetryCtxType>(
-    () => ({ connected, last: lastRef.current, series: seriesRef.current, _ver: tick }),
+    () => ({ connected, last: lastRef.current, series: seriesRef.current, faults: faultsRef.current, status: statusRef.current, _ver: tick }),
     [connected, tick]
   );
 
   return <TelemetryCtx.Provider value={ctx}>{children}</TelemetryCtx.Provider>;
 }
 
-// Public hooks
+/* ========= Hooks ========= */
 export function useMetric(name: string) {
   const { last, series } = useContext(TelemetryCtx);
   const key = norm(name);
@@ -194,12 +188,34 @@ export function useMetric(name: string) {
     series: (series[key] || []) as MetricRow[],
   };
 }
-
 export function useTelemetryConnection() {
   return useContext(TelemetryCtx).connected;
 }
-
-// Debug helper: dump full context
 export function useTelemetryState() {
   return useContext(TelemetryCtx);
+}
+export function useFaults() {
+  return useContext(TelemetryCtx).faults;
+}
+
+/** NEW: access live status map (OK/WARN/FAULT) */
+export function useStatuses() {
+  return useContext(TelemetryCtx).status;
+}
+
+/* Derived helpers */
+export function usePowerKW() {
+  const v = useMetric("DC Voltage").value ?? NaN;
+  const a = useMetric("Battery Current").value ?? NaN;
+  const p = Number.isFinite(v) && Number.isFinite(a) ? (v * a) / 1000 : undefined;
+  return p;
+}
+export function useHottestTemp() {
+  const m = useMetric("Motor Temp").value;
+  const inv = useMetric("Inverter Temp").value;
+  const arr = [m, inv].filter((x) => Number.isFinite(x)) as number[];
+  if (arr.length === 0) return { name: undefined as string | undefined, val: undefined as number | undefined };
+  const val = Math.max(...arr);
+  const name = val === m ? "Motor Temp" : "Inverter Temp";
+  return { name, val };
 }

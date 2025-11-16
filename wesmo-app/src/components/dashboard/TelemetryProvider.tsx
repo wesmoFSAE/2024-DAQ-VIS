@@ -174,7 +174,9 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
     [connected, tick]
   );
 
-  return <TelemetryCtx.Provider value={ctx}>{children}</TelemetryCtx.Provider>;
+  return <TelemetryCtx.Provider value={ctx}>
+    {children}
+    </TelemetryCtx.Provider>;
 }
 
 /* ========= Hooks ========= */

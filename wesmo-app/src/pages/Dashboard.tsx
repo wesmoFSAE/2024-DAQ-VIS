@@ -9,6 +9,9 @@ import {
   useStatuses,
 } from "../components/dashboard/TelemetryProvider.tsx";
 
+import ModernDashboard from "../components/dashboard/ModernDashboard.tsx";
+
+
 // Simple UI-side thresholds (tweak to taste)
 const UI_THRESHOLDS = {
   SoC: { warnLow: 20, faultLow: 10 },            // %  (orange <20, red <10)
@@ -250,7 +253,7 @@ function DashboardInner() {
 export default function Dashboard() {
   return (
     <TelemetryProvider>
-      <DashboardInner />
+      <ModernDashboard />
     </TelemetryProvider>
   );
 }

@@ -1,0 +1,198 @@
+:root{
+  --accent: #e11d2a;          /* WESMO red */
+  --glass: rgba(20,20,20,.65);
+  --stroke: rgba(255,255,255,.12);
+  --text: #f7f7f7;
+  --muted: rgba(255,255,255,.7);
+}
+
+.contact-page {
+  position: relative;
+  color: var(--text);
+  min-height: 100vh;
+}
+
+.contact-page .background {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(1200px 600px at 20% -10%, rgba(0,0,0,.45), transparent 70%),
+              rgba(0,0,0,.35);
+  /* your existing page background image/video can live under .background if you prefer */
+}
+
+.contact-shell{
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 28px;
+}
+
+@media (max-width: 980px){
+  .contact-shell{ grid-template-columns: 1fr; }
+}
+
+/* —— cards ——————————————————————————————————— */
+
+.contact-cards{
+  display: grid;
+  gap: 16px;
+}
+
+.contact-card{
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 16px;
+  border-radius: 16px;
+  background: var(--glass);
+  border: 1px solid var(--stroke);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 30px rgba(0,0,0,.28);
+  color: var(--text);
+  text-align: left;
+  transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
+}
+.contact-card .icon{
+  width: 46px; height: 46px; display: grid; place-items: center;
+  border-radius: 12px; color: #fff; background: linear-gradient(135deg, var(--accent), #ff6a6a);
+}
+.contact-card .body .kicker{
+  margin: 0; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+}
+.contact-card .body .title{
+  margin: 2px 0 0; font-size: 18px; font-weight: 700; letter-spacing: .2px;
+}
+.contact-card .chip{
+  display: inline-block; margin-top: 6px; font-size: 11px; color: var(--muted);
+  border: 1px solid var(--stroke); border-radius: 999px; padding: 3px 8px;
+}
+
+.contact-card:hover{
+  transform: translateY(-2px);
+  background: rgba(30,30,30,.7);
+  box-shadow: 0 10px 34px rgba(0,0,0,.34);
+}
+.contact-card:active{ transform: translateY(0); }
+
+/* —— form ——————————————————————————————————— */
+
+.contact-form-card{
+  padding: 20px 20px 22px;
+  border-radius: 18px;
+  background: var(--glass);
+  border: 1px solid var(--stroke);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 30px rgba(0,0,0,.28);
+}
+.contact-form-card h3{
+  margin: 4px 0 14px; font-size: 20px; letter-spacing: .2px;
+}
+
+.contact-form-card .grid{
+  display: grid; gap: 14px; grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 640px){ .contact-form-card .grid{ grid-template-columns: 1fr; } }
+
+.contact-form-card label{ display: grid; gap: 6px; }
+.contact-form-card label span{
+  font-size: 12px; letter-spacing: .08em; color: var(--muted);
+}
+
+.contact-form-card input,
+.contact-form-card textarea{
+  width: 100%;
+  color: var(--text);
+  background: rgba(255,255,255,.06);
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+.contact-form-card textarea{ resize: vertical; min-height: 120px; }
+
+.contact-form-card input:focus,
+.contact-form-card textarea:focus{
+  border-color: rgba(255,255,255,.35);
+  background: rgba(255,255,255,.09);
+  box-shadow: 0 0 0 3px rgba(225, 29, 42, .25);
+}
+
+.contact-form-card .actions{
+  display: flex; gap: 12px; align-items: center; margin-top: 14px; flex-wrap: wrap;
+}
+.contact-form-card .btn{
+  appearance: none; border: none; cursor: pointer; font-weight: 700;
+  padding: 11px 16px; border-radius: 12px; color: #000;
+  background: linear-gradient(135deg, #fff, #f4f4f4);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.contact-form-card .btn:hover{ transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,.22); }
+.contact-form-card .btn:disabled{ opacity: .6; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.contact-form-card .status{ font-size: 13px; opacity: .9; }
+.contact-form-card .status.ok{ color: #97f59a; }
+.contact-form-card .status.err{ color: #ff9fa2; }
+
+/* honeypot */
+.honeypot{ position: absolute; left: -9999px; opacity: 0; pointer-events: none; }
+
+/* —— map ——————————————————————————————————— */
+
+.map-card{
+  grid-column: 1 / -1;
+  height: 360px;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid var(--stroke);
+  background: rgba(255,255,255,.03);
+  box-shadow: 0 8px 30px rgba(0,0,0,.25);
+}
+.map-card iframe{
+  width: 100%; height: 100%; border: 0;
+  filter: saturate(1.05) contrast(1.05) brightness(.95);
+}
+
+
+/* Use the same font as your site (Roboto Condensed) */
+.contact-form-card,
+.contact-form-card h3,
+.contact-form-card label span,
+.contact-form-card input,
+.contact-form-card textarea,
+.contact-form-card .btn,
+.contact-card .kicker,
+.contact-card .title {
+  font-family: 'Roboto Condensed', Arial, sans-serif;
+  letter-spacing: .2px;
+}
+
+/* Headline weight/size to match your vibe */
+.contact-form-card h3 {
+  font-weight: 700;
+  font-size: 20px;
+}
+
+/* Inputs/buttons readable and consistent */
+.contact-form-card input,
+.contact-form-card textarea {
+  font-size: 16px;
+}
+.contact-form-card .btn {
+  font-size: 16px;
+}
+
+/* Icon box now shows gradient inside the SVG, so no bg needed here */
+.contact-card .icon {
+  background: transparent;
+  border-radius: 12px;
+}
+.contact-card .icon svg {
+  display: block;
+  width: 46px;
+  height: 46px;
+}

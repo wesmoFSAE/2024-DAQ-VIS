@@ -1,0 +1,174 @@
+/* Sponsors page full-bleed tiers + tidy layout */
+
+.sponsors-page {
+  color: #fff;
+  background: radial-gradient(1200px 600px at 50% -10%, rgba(255,255,255,.06), transparent 55%);
+}
+
+/* Full-bleed tier rows */
+.tier-row {
+  position: relative;
+  left: 50%;
+  right: 50%;
+  margin-left: -50vw;
+  margin-right: -50vw;
+  width: 100vw;           /* edge-to-edge band */
+  padding: 20px 0 26px;   /* band height + spacing below */
+}
+
+/* Inner container keeps logos nicely centered */
+.tier-inner {
+  width: min(1400px, 92vw);
+  margin: 0 auto;
+  padding: 0 12px;
+}
+
+/* Tier colors */
+.tier-row.platinum { background: rgba(255,255,255,0.85); }
+.tier-row.gold     { background: #ffd100; }
+.tier-row.silver   { background: rgba(255,255,255,0.70); }
+.tier-row.bronze   { background: #b8824a; }
+
+/* Headings inside bands */
+.tier-row .title {
+  margin: 0 0 10px;
+  text-align: center;
+  font-weight: 800;
+  letter-spacing: .02em;
+  font-size: clamp(20px, 2.6vw, 28px);
+  color: #0b0b0b;
+}
+
+/* Logo loop wrapper */
+.loop-wrap {
+  margin: 0 auto;
+  padding: 0;
+}
+
+/* If you had older 'full-width title' rules, neutralize them here */
+.background.sponsors .title.platinum,
+.background.sponsors .title.gold,
+.background.sponsors .title.silver,
+.background.sponsors .title.bronze { all: unset; }
+
+/* Keep everything tidy on small screens */
+html, body { overflow-x: hidden; }
+
+/* Optional: CTA block harmonization */
+.info .imagetext-component {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 20px;
+  align-items: center;
+  width: min(900px, 92vw);
+  margin: 26px auto 48px;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+}
+.info .image { max-width: 120px; height: auto; display: block; }
+.info .more {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 16px; border-radius: 999px; font-weight: 700;
+  text-decoration: none; border: 1px solid transparent;
+  background: #e11d2e; color: #fff;
+  transition: filter .18s ease, transform .02s;
+}
+.info .more:hover { filter: brightness(.95); }
+.info .more:active { transform: translateY(1px); }
+
+
+/* ---------- Metallic band presets ---------- */
+
+/* shared metallic noise/sheen overlay */
+.tier-row::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* faint brushed-lines + diagonal sheen */
+  background:
+    linear-gradient(120deg, rgba(255,255,255,.15) 0%, rgba(255,255,255,0) 35%, rgba(255,255,255,.12) 60%, rgba(255,255,255,0) 100%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,.03) 0px,
+      rgba(255,255,255,.03) 1px,
+      rgba(0,0,0,.02) 1px,
+      rgba(0,0,0,.02) 4px
+    );
+  mix-blend-mode: screen;            /* subtle metallic lift */
+  opacity: .55;
+  animation: sheen 6s linear infinite;
+  background-size: 200% 100%, auto;  /* animate only the sheen */
+}
+
+/* slow horizontal pass for the sheen */
+@keyframes sheen {
+  0%   { background-position: 0% 0, 0 0; }
+  100% { background-position: 200% 0, 0 0; }
+}
+
+/* PLATINUM: cool silver with soft center glow */
+.tier-row.platinum {
+  color: #101318;
+  background:
+    radial-gradient(1200px 400px at 50% -20%, rgba(255,255,255,.55), transparent 60%),
+    linear-gradient(180deg, #f4f6f8 0%, #dfe3e8 38%, #cfd5db 52%, #e7ebef 78%, #f7f8fa 100%);
+  border-top: 1px solid rgba(0,0,0,.06);
+  border-bottom: 1px solid rgba(255,255,255,.6);
+}
+
+/* GOLD: rich warm gradient with inner glow */
+.tier-row.gold {
+  color: #111;
+  background:
+    radial-gradient(1200px 420px at 50% -20%, rgba(255,240,160,.45), transparent 65%),
+    linear-gradient(180deg, #ffe59a 0%, #ffd24e 35%, #fbbb22 52%, #ffd24e 70%, #fff0b0 100%);
+  border-top: 1px solid rgba(155,96,0,.25);
+  border-bottom: 1px solid rgba(255,245,200,.65);
+}
+
+/* SILVER: neutral metallic with a crisp edge */
+.tier-row.silver {
+  color: #101318;
+  background:
+    radial-gradient(1200px 420px at 50% -20%, rgba(255,255,255,.45), transparent 65%),
+    linear-gradient(180deg, #f0f3f6 0%, #d8dee5 36%, #c7cfd8 52%, #e2e7ee 76%, #f6f8fa 100%);
+  border-top: 1px solid rgba(0,0,0,.06);
+  border-bottom: 1px solid rgba(255,255,255,.6);
+}
+
+/* BRONZE: deeper metallic bronze with highlight */
+.tier-row.bronze {
+  color: #111;
+  background:
+    radial-gradient(1200px 420px at 50% -20%, rgba(255,215,160,.35), transparent 65%),
+    linear-gradient(180deg, #c69158 0%, #b87a3f 35%, #a96534 52%, #bf7a45 70%, #e2b184 100%);
+  border-top: 1px solid rgba(80,40,10,.3);
+  border-bottom: 1px solid rgba(255,230,200,.5);
+}
+
+
+
+/* Remove any “dot”/separator inside our scrolling logo strips */
+.loop-wrap li,
+.loop-wrap ul { list-style: none; }
+
+/* If separators are rendered as elements with classes/attrs */
+.loop-wrap .separator,
+.loop-wrap .sep,
+.loop-wrap .dot,
+.loop-wrap [data-separator],
+.loop-wrap [aria-hidden="true"][role="separator"] {
+  display: none !important;
+}
+
+/* If separators are pseudo-elements on items */
+.loop-wrap li::before,
+.loop-wrap li::after {
+  content: none !important;
+}
+
+/* If the loop uses ::marker bullets */
+.loop-wrap li::marker { content: "" !important; }

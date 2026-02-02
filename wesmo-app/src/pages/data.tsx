@@ -13,7 +13,7 @@ import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import "../App.css";
 
-import BurgerMenu from "../components/BurgerMenu.tsx";
+
 import Logo from "../components/Logo.tsx";
 import DefaultGrid from "../components/dashboard/DefaultGrid.tsx";
 import Spinner from "../components/dashboard/Spinner.tsx";
@@ -121,7 +121,7 @@ const Data: React.FC = () => {
               <Logo colour="dark" />
             </div>
             <div className="nav-right">
-              <BurgerMenu colour="black" />
+             
               <div className="nav-right"></div>
             </div>
           </div>
@@ -141,7 +141,7 @@ const Data: React.FC = () => {
               <Logo colour="dark" />
             </div>
             <div className="nav-right">
-              <BurgerMenu colour="black" />
+             
               <div className="nav-right"></div>
             </div>
           </div>
@@ -162,7 +162,7 @@ const Data: React.FC = () => {
               <Logo colour="dark" />
             </div>
             <div className="nav-right">
-              <BurgerMenu colour="black" />
+             
               <div className="nav-right"></div>
             </div>
           </div>
@@ -278,7 +278,7 @@ const Data: React.FC = () => {
               {popUpContent}
             </PopUp>
             <div className="nav-right">
-              <BurgerMenu colour="black" />
+             
               <div className="nav-right"></div>
             </div>
           </div>

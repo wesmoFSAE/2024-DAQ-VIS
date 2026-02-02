@@ -1,84 +1,64 @@
-/*
- * File: components/TypeWriter.tsx
- * Author: Hannah Murphy
- * Date: 2024
- * Description: A text component which types the content out slowly.
- *
- * Copyright (c) 2024 WESMO. All rights reserved.
- * This code is part of the  WESMO Data Acquisition and Visualisation Project.
- */
+import React, { useEffect, useState } from "react";
 
-import React from "react";
-import "./TypeWriter.css";
+type TypeWriterProps = {
+  data: string[];          // words to cycle through
+  typingSpeed?: number;    // ms per character while typing
+  deletingSpeed?: number;  // ms per character while deleting
+  pauseBetween?: number;   // ms to pause on a full word before deleting
+  loop?: boolean;
+  className?: string;
+};
 
-class TypeWriter extends React.PureComponent {
-  unmounted: boolean;
-  loopNum: number;
-  period: number;
-  isDeleting: boolean;
-  constructor(props) {
-    super(props);
+const TypeWriter: React.FC<TypeWriterProps> = ({
+  data,
+  typingSpeed = 60,
+  deletingSpeed = 30,
+  pauseBetween = 1000,
+  loop = true,
+  className,
+}) => {
+  const [wordIndex, setWordIndex] = useState(0);
+  const [display, setDisplay] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
 
-    this.state = {
-      text: "",
-    };
+  useEffect(() => {
+    const words = data && data.length ? data : [""];
+    const current = words[wordIndex % words.length];
 
-    this.tick = this.tick.bind(this);
-  }
+    let timer: number;
 
-  componentDidMount() {
-    this.unmounted = false;
-    this.loopNum = 0;
-    this.period = 3000;
-    this.isDeleting = false;
-    this.tick();
-  }
-
-  componentWillUnmount() {
-    this.unmounted = true;
-  }
-
-  tick() {
-    if (this.unmounted) {
-      return;
-    }
-
-    const { data: toRotate } = this.props;
-    const i = this.loopNum % toRotate.length;
-    const fullTxt = toRotate[i];
-
-    let newText = "";
-    if (this.isDeleting) {
-      newText = fullTxt.substring(0, this.state.text.length - 1);
+    if (!isDeleting) {
+      if (display.length < current.length) {
+        timer = window.setTimeout(
+          () => setDisplay(current.slice(0, display.length + 1)),
+          typingSpeed
+        );
+      } else {
+        timer = window.setTimeout(() => setIsDeleting(true), pauseBetween);
+      }
     } else {
-      newText = fullTxt.substring(0, this.state.text.length + 1);
+      if (display.length > 0) {
+        timer = window.setTimeout(
+          () => setDisplay(current.slice(0, display.length - 1)),
+          deletingSpeed
+        );
+      } else {
+        setIsDeleting(false);
+        const next = wordIndex + 1;
+        if (next >= words.length && !loop) return;
+        setWordIndex(next % words.length);
+      }
     }
 
-    let delta = 200 - Math.random() * 100;
+    return () => clearTimeout(timer);
+  }, [data, wordIndex, display, isDeleting, typingSpeed, deletingSpeed, pauseBetween, loop]);
 
-    if (this.isDeleting) {
-      delta /= 2;
-    }
-
-    if (!this.isDeleting && newText === fullTxt) {
-      this.isDeleting = true;
-      delta = 3000;
-    } else if (this.isDeleting && newText === "") {
-      this.isDeleting = false;
-      this.loopNum++;
-      delta = 4000;
-    }
-
-    this.setState({ text: newText });
-
-    setTimeout(() => {
-      this.tick();
-    }, delta);
-  }
-
-  render() {
-    return <div id="typewriter">{this.state.text}</div>;
-  }
-}
+  return (
+    <span className={className} aria-live="polite">
+      {display}
+      <span style={{ display: "inline-block", width: "0.6ch", animation: "blink 1s steps(1) infinite" }}>|</span>
+    </span>
+  );
+};
 
 export default TypeWriter;

@@ -11,10 +11,13 @@
 
 import React from "react";
 import { Typography } from "@mui/material";
-import BurgerMenu from "../components/BurgerMenu.tsx";
+
 import Logo from "../components/Logo.tsx";
 import TitleCard from "../components/TitleCard.tsx";
 import InfoExplore from "../components/InfoExplore.tsx";
+
+import PillNav from "../reactbits/PillNav.tsx";
+
 import "../App.css";
 
 const Explore: React.FC = () => {
@@ -30,7 +33,7 @@ const Explore: React.FC = () => {
             <Logo />
           </div>
           <div className="nav-right">
-            <BurgerMenu />
+            
           </div>
         </div>
         <br />

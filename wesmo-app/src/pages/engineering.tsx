@@ -29,6 +29,7 @@ import Trent from "../images/team/Trent_tuapiki.jpeg";
 import Cameron from "../images/team/cameron_mailer.jpeg";
 import Allan from "../images/team/allan_liang.jpeg";
 import Anthony from "../images/team/anthony_east.jpeg";
+import Aditya from "../images/team/aditya_sharma.jpg";
 
 type Member = {
   name: string;
@@ -36,6 +37,7 @@ type Member = {
   component: string;
   img: string;
   description: string;
+  githubUrl?: string;
 };
 
 const MEMBERS: Member[] = [
@@ -51,6 +53,15 @@ const MEMBERS: Member[] = [
   { name: "Jackson Smith",    discipline: "Mechanical Engineering",    component: "Uprights",                          img: Jackson, description: "Upright and hub design; weight reduction and stiffness trade-offs." },
   { name: "Cameron Mailer",   discipline: "Mechanical Engineering",    component: "Accumulator",                       img: Cameron, description: "Accumulator structure, interfacing, and safety mounting; coordinated cooling strategy." },
   { name: "Hannah Murphy",    discipline: "Software Engineering",      component: "Data Acquisition & Visualisation",  img: Hannah,  description: "Built the DAQ/visualisation stack and telemetry dashboard; integrated sensors with CAN nodes." },
+  {
+    name: "Aditya Sharma",
+    discipline: "Software Engineering",
+    component: "2025 website & pre-fault detection",
+    img: Aditya,
+    description:
+      "Contributed to the 2025 website and the new pre-fault detection system.",
+    githubUrl: "https://github.com/AddySha",
+  },
   { name: "Ethan Matai'a",     discipline: "Mechatronics Engineering",  component: "Safety systems",                    img: Ethan,   description: "Safety interlocks and HV/LV monitoring; validated shutdown logic and IMD/AMS interfaces." },
   { name: "George Armstrong", discipline: "Mechatronics Engineering",  component: "Motor Controller",                  img: George,  description: "MC configuration & tuning; assisted with cooling and cabling layout." },
   { name: "Lachlan Coleman",  discipline: "Mechatronics Engineering",  component: "Accumulator",                       img: LachlanC,description: "Accumulator pack layout and BMS integration; documentation for scrutineering." },
@@ -137,6 +148,18 @@ function MemberModal({
           </div>
 
           <p style={{ marginTop: 12, lineHeight: 1.6 }}>{member.description}</p>
+          {member.githubUrl && (
+            <p style={{ marginTop: 14, marginBottom: 0 }}>
+              <a
+                href={member.githubUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "#8ab4ff", fontWeight: 600 }}
+              >
+                GitHub →
+              </a>
+            </p>
+          )}
         </div>
       </div>
     </div>,
@@ -221,6 +244,25 @@ const Engineering: React.FC = () => {
                     </div>
                     <div style={{ fontSize: ".8rem", opacity: 0.95 }}>{m.discipline}</div>
                     <div style={{ fontSize: ".8rem", opacity: 0.9 }}>{m.component}</div>
+                    {m.githubUrl && (
+                      <a
+                        href={m.githubUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        style={{
+                          fontSize: ".75rem",
+                          marginTop: 8,
+                          color: "#fff",
+                          textDecoration: "underline",
+                          textUnderlineOffset: 2,
+                          alignSelf: "flex-start",
+                        }}
+                      >
+                        GitHub
+                      </a>
+                    )}
                   </div>
                 }
               />

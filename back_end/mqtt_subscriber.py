@@ -217,10 +217,10 @@ def subscribe(client: mqtt_client, redis_client):
         if raw_data != "None":
             # Motor Controller
             if (
-                "ID:      181" in raw_data
-                or "ID:      281" in raw_data
-                or "ID:      381" in raw_data
-                or "ID:      481" in raw_data
+                "ID:      0181" in raw_data
+                or "ID:      0281" in raw_data
+                or "ID:      0381" in raw_data
+                or "ID:      0481" in raw_data
             ):
                 data = mc_translator.decode(raw_data)
                 if data != []:
@@ -228,7 +228,7 @@ def subscribe(client: mqtt_client, redis_client):
 
             # Battery Management System
             if (
-                "ID:      04d" in raw_data
+                "ID:      004d" in raw_data
             ):
                 data = bms_translator.decode(raw_data)
                 if data != []:
@@ -236,10 +236,10 @@ def subscribe(client: mqtt_client, redis_client):
 
             # Vehicle Control Unit
             elif (
-                "ID:      010" in raw_data
-                or "ID:      011" in raw_data
-                or "ID:      012" in raw_data
-                or "ID:      201" in raw_data
+                "ID:      0010" in raw_data
+                or "ID:      0011" in raw_data
+                or "ID:      0012" in raw_data
+                or "ID:      0201" in raw_data
             ):
                 data = vcu_translator.decode(raw_data)
 

@@ -28,10 +28,10 @@ cd $APP_DIR
 git pull
 
 # Install the necessary npm packages
-npm install
+#npm install
 
 # Build the application
-npm run build
+#npm run build
 
 # Copy the build files to the web directory
 sudo cp -r build/* $WEB_DIR

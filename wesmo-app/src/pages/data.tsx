@@ -71,7 +71,7 @@ const Data: React.FC = () => {
     const timerRecieve = (timer: DataItem[]) => {
       setTimer(timer);
     };
-    const socket = io("https://wesmo.co.nz/", {
+    const socket = io("https://3.106.41.128", {
       transports: ["websocket"],
     });
 

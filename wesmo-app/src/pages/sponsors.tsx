@@ -55,7 +55,7 @@ const Sponsors: React.FC = () => {
           <div className="title bronze">Bronze</div>
           <SponsorRow images={bronze} width={120} />
 
-          <div className="info">
+          {/* <div className="info">
             <div className="imagetext-component">
               <div className="image-container">
                 <img src={logo} alt="" className="image" />
@@ -73,10 +73,11 @@ const Sponsors: React.FC = () => {
                   >
                     Find out more
                   </Link>
+                  
                 </p>
               </div>
             </div>
-          </div>
+          </div>*/}
         </div>
       </div>
     </div>

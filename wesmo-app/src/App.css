@@ -606,6 +606,9 @@ h1 {
   margin-top: 20%;
 }
 
+.explore-note {
+  font-style: italic;
+}
 /* History Main Page */
 .year-title {
   background-color: rgba(175, 23, 19, 1);

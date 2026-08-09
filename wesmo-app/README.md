@@ -21,4 +21,10 @@ It correctly bundles React in production mode and optimizes the build for the be
 
 The build is minified and the filenames include the hashes.
 
-This is what is used on the AWS EC2 server which hosts the live website at https://wesmo.co.nz
+### Deployment
+
+The production build is deployed to the `wesmo-site-prod` S3 bucket, which serves the live site at https://wesmo.co.nz via CloudFront (AWS's CDN).
+
+After running `npm run build`, upload the `build` folder to the root of the `wesmo-site-prod` bucket. Because CloudFront caches content at edge locations, changes may not appear immediately — to force an update, create a CloudFront invalidation (`/*`) via the AWS Console (CloudFront → your distribution → Invalidations → Create Invalidation):
+
+> Note: this site was previously hosted on an EC2 instance; it now runs on S3 + CloudFront.

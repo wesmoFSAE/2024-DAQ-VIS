@@ -18,7 +18,7 @@ import TitleCard from "../components/TitleCard.tsx";
 
 import close_up from "../images/close_up.jpg";
 import fsae from "../images/wesmo-logo/fsae-logo.png";
-import rules from "../files/FSAE_Rules_2024_V1.pdf";
+import rules from "../files/FSAE_Rules.pdf";
 
 import "../App.css";
 
@@ -75,8 +75,8 @@ const Fsae: React.FC = () => {
             </div>
             <div className="text-container fsae-left">
               <p>
-                This years competition runs from the 5th to 8th December 2024 at
-                Calder Park Raceway, in Calder Park, Victoria, Australia.
+                This years competition runs from the 7th to 10th December 2026 at
+                The Bend Motorsport Park - Tailem Bend, South Australia.
                 <br />
                 <br />
                 To find out more about SAEA: <br />
@@ -92,7 +92,7 @@ const Fsae: React.FC = () => {
                   rel="noreferrer"
                   className="link"
                 >
-                  FSAE Rules 2024
+                  FSAE Rules 2026
                 </Link>
               </div>
             </div>

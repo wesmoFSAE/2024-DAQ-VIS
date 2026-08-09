@@ -27,6 +27,7 @@ import History from "./pages/history.tsx";
 import Data from "./pages/data.tsx";
 import Fsae from "./pages/fsae.tsx";
 import Explore from "./pages/explore.tsx";
+import Engineering2024 from "./pages/engineering-2024.tsx"; 
 
 const App: React.FC = () => {
   return (
@@ -46,7 +47,7 @@ const App: React.FC = () => {
         {/* <Route path="/history-2016" element={<History2023 />} /> */}
         <Route path="/history-2015" element={<History2015 />} />
         <Route path="/history-2014" element={<History2014 />} />
-
+        <Route path="/engineering-team/2024" element={<Engineering2024 />} />
         <Route path="/about-wesmo/explore" element={<Explore />} />
       </Routes>
     </Router>

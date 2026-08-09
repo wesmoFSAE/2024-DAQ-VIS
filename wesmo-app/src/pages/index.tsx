@@ -36,7 +36,7 @@ const Home: React.FC = () => {
           </div>
         </div>
         <div id="mainTitle">
-          <div id="year">2024</div>
+          <div id="year">2026</div>
           <h1 className="text-3xl font-bold underline">
             Support Your Local
             <Typewriter data={typeWriter} />

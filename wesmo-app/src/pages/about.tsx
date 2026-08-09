@@ -39,39 +39,41 @@ const About: React.FC = () => {
         <div className="right-display about">
           <div className="image-text-component about">
             <div className="text-container alt about">
-              WESMO was founded in 2006.
-              <br />
-              <br />
-              The Wesmo team is gearing up for the Formula SAE competition, a
-              competition in which the University of Waikato, under the name
-              WESMO, competes against 30-35 other teams from across Oceania.
-              <br />
-              <br />
-              Previously we have built and raced with Internal Combustion (IC)
-              engine cars. These cars have done very well at the FSAE
-              competition, such as in 2023 we placed second in the skidpad
-              event.
-              <br />
-              Starting in 2024 we will be building our cars to be Electric (EV)
-              and for the first time we will be entering into the EV
-              competition. The team will be building the car with the knowledge
-              collected from the 2023 EV research.
+             WESMO was founded in 2006.
+<br />
+<br />
+The Wesmo team is gearing up for the Formula SAE competition, a
+competition in which the University of Waikato, under the name
+WESMO, competes against 30-35 other teams from across Oceania.
+<br />
+<br />
+Previously we have built and raced with Internal Combustion (IC)
+engine cars. These cars have done very well at the FSAE
+competition - we won the overall IC competition in 2022, and
+placed second in the skidpad event in 2023.
+<br />
+<br />
+2023 marked our final year competing with an IC car. Starting in
+2024, we transitioned to building Electric (EV) cars, entering the
+EV competition for the first time.
             </div>
             <div className="image-container right">
               <img src={logo} alt="" className="image right" />
             </div>
           </div>
         </div>
-        <div className="explore">
-          <Button
-            variant="outlined"
-            color="error"
-            size="medium"
-            href="/about-wesmo/explore"
-          >
-            Explore our car
-          </Button>
-        </div>
+<div className="explore">
+  <Button
+    variant="outlined"
+    color="error"
+    size="medium"
+    href="/about-wesmo/explore"
+  >
+    Explore our IC Car
+  </Button>
+  <br/><br/>
+  <p className="explore-note">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;EV build coming soon</p>
+</div>
       </div>
     </div>
   );
